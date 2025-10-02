@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 #
-# Usage: ./track-contributions.sh username [org] [days]
+# Usage: ./track-contributions.sh username [org] [days] [--verbose]
 #   username   GitHub username to track
 #   org        GitHub org (optional, searches across accessible repos if not provided)
 #   days       number of days to look back (default: 30)
+#   --verbose  Include full comment text in output
 #
 # Requirements:
 #   - gh (GitHub CLI) authenticated
@@ -11,6 +12,8 @@
 #
 
 set -euo pipefail
+
+VERBOSE=false
 
 # Detect OS and set appropriate date functions
 if [[ "$OSTYPE" == "darwin"* ]]; then
@@ -23,9 +26,27 @@ else
     }
 fi
 
-USERNAME="$1"
-ORG="${2:-}"
-DAYS="${3:-30}"
+# Parse arguments
+USERNAME=""
+ORG=""
+DAYS="30"
+
+for arg in "$@"; do
+    if [[ "$arg" == "--verbose" ]]; then
+        VERBOSE=true
+    elif [[ -z "$USERNAME" ]]; then
+        USERNAME="$arg"
+    elif [[ -z "$ORG" ]]; then
+        ORG="$arg"
+    else
+        DAYS="$arg"
+    fi
+done
+
+if [[ -z "$USERNAME" ]]; then
+    echo "Usage: $0 username [org] [days] [--verbose]"
+    exit 1
+fi
 
 SINCE=$(get_date_days_ago "$DAYS")
 
@@ -163,17 +184,29 @@ while IFS= read -r pr_b64; do
 
     echo "PR: $pr_url"
 
-    # Extract and display individual comment URLs
+    # Extract and display individual comment URLs (and text if verbose)
     if (( review_body_count > 0 )); then
-        echo "$user_reviews" | jq -r '.[] | select(.body != null and .body != "") | "  Review: \(.html_url)"'
+        if [[ "$VERBOSE" == "true" ]]; then
+            echo "$user_reviews" | jq -r '.[] | select(.body != null and .body != "") | "  Review: \(.html_url)\n    \(.body)\n"'
+        else
+            echo "$user_reviews" | jq -r '.[] | select(.body != null and .body != "") | "  Review: \(.html_url)"'
+        fi
     fi
 
     if (( issue_comment_count > 0 )); then
-        echo "$user_issue_comments" | jq -r '.[] | "  Comment: \(.html_url)"'
+        if [[ "$VERBOSE" == "true" ]]; then
+            echo "$user_issue_comments" | jq -r '.[] | "  Comment: \(.html_url)\n    \(.body)\n"'
+        else
+            echo "$user_issue_comments" | jq -r '.[] | "  Comment: \(.html_url)"'
+        fi
     fi
 
     if (( review_comment_count > 0 )); then
-        echo "$user_review_comments" | jq -r '.[] | "  Review comment: \(.html_url)"'
+        if [[ "$VERBOSE" == "true" ]]; then
+            echo "$user_review_comments" | jq -r '.[] | "  Review comment: \(.html_url)\n    \(.body)\n"'
+        else
+            echo "$user_review_comments" | jq -r '.[] | "  Review comment: \(.html_url)"'
+        fi
     fi
 
     echo
