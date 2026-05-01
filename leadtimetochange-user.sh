@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 #
+# Lead Time to Change (per user) — measures average time from PR creation
+# to merge for a specific contributor.
+#
 # Usage: ./leadtimetochange-user.sh owner/repo username [days]
 #   owner/repo   GitHub repo (e.g. "octocat/hello-world")
 #   username     GitHub username to filter PRs by
@@ -8,10 +11,33 @@
 # Requirements:
 #   - gh (GitHub CLI) authenticated
 #   - jq
-#   - numfmt (coreutils)
 #
 
 set -euo pipefail
+
+usage() {
+  cat <<EOF
+Usage: $(basename "$0") owner/repo username [days]
+
+Measures average lead time from PR creation to merge for a specific user.
+
+Arguments:
+  owner/repo   GitHub repo (e.g. "octocat/hello-world")
+  username     GitHub username to filter PRs by
+  days         Lookback window in days (default: 30)
+
+Examples:
+  $(basename "$0") my-org/my-repo janedoe
+  $(basename "$0") my-org/my-repo janedoe 60
+
+Requires: gh (authenticated), jq
+EOF
+}
+
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+  usage
+  exit 0
+fi
 
 # Detect OS and set appropriate date functions
 if [[ "$OSTYPE" == "darwin"* ]]; then
@@ -20,7 +46,7 @@ if [[ "$OSTYPE" == "darwin"* ]]; then
         local days=$1
         date -u -v-"$days"d +"%Y-%m-%dT%H:%M:%SZ"
     }
-    
+
     parse_timestamp() {
         local timestamp=$1
         date -j -f "%Y-%m-%dT%H:%M:%SZ" "$timestamp" +%s
@@ -31,7 +57,7 @@ else
         local days=$1
         date -u -d "$days days ago" +"%Y-%m-%dT%H:%M:%SZ"
     }
-    
+
     parse_timestamp() {
         local timestamp=$1
         date -d "$timestamp" +%s
@@ -42,7 +68,7 @@ fi
 format_time() {
     local seconds=$1
     local hours=$(( seconds / 3600 ))
-    
+
     if (( hours >= 24 )); then
         local days=$(( hours / 24 ))
         printf "%d days" "$days"
@@ -58,11 +84,8 @@ format_time() {
 
 # Check required arguments
 if [[ $# -lt 2 ]]; then
-    echo "Error: Missing required arguments"
-    echo "Usage: $0 owner/repo username [days]"
-    echo "  owner/repo   GitHub repo (e.g. \"octocat/hello-world\")"
-    echo "  username     GitHub username to filter PRs by"
-    echo "  days         lookback window in days (default: 30)"
+    echo "Error: missing required arguments" >&2
+    usage >&2
     exit 1
 fi
 
@@ -92,8 +115,8 @@ fi
 total_seconds=0
 count=0
 
-printf "\nPR#    Lead Time          Created At               Merged At\n"
-printf "%s\n" "------------------------------------------------------------"
+printf "\n%-6s  %-15s  %-20s  %-20s  %s\n" "PR#" "Lead Time" "Created" "Merged" "URL"
+printf "%s\n" "-----------------------------------------------------------------------------------------------"
 
 # Process each PR and store results in arrays
 while IFS= read -r pr; do
@@ -107,9 +130,8 @@ while IFS= read -r pr; do
   delta=$(( ts_merged - ts_created ))
   normalized_time=$(format_time "$delta")
 
-  # Create PR link
   pr_link="https://github.com/$REPO/pull/$num"
-  printf "%s %-15s %s   %s\n" "$pr_link" "$normalized_time" "$created" "$merged"
+  printf "#%-5s  %-15s  %-20s  %-20s  %s\n" "$num" "$normalized_time" "$created" "$merged" "$pr_link"
 
   total_seconds=$(( total_seconds + delta ))
   count=$(( count + 1 ))

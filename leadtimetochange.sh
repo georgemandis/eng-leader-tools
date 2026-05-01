@@ -1,16 +1,46 @@
 #!/usr/bin/env bash
 #
-# Usage: ./leadtime.sh owner/repo [days]
+# Lead Time to Change — measures average time from PR creation to merge.
+#
+# Usage: ./leadtimetochange.sh owner/repo [days]
 #   owner/repo   GitHub repo (e.g. "octocat/hello-world")
 #   days         lookback window in days (default: 30)
 #
 # Requirements:
 #   - gh (GitHub CLI) authenticated
 #   - jq
-#   - numfmt (coreutils)
 #
 
 set -euo pipefail
+
+usage() {
+  cat <<EOF
+Usage: $(basename "$0") owner/repo [days]
+
+Measures average lead time from PR creation to merge.
+
+Arguments:
+  owner/repo   GitHub repo (e.g. "octocat/hello-world")
+  days         Lookback window in days (default: 30)
+
+Examples:
+  $(basename "$0") my-org/my-repo
+  $(basename "$0") my-org/my-repo 90
+
+Requires: gh (authenticated), jq
+EOF
+}
+
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+  usage
+  exit 0
+fi
+
+if [[ $# -lt 1 ]]; then
+  echo "Error: missing required argument owner/repo" >&2
+  usage >&2
+  exit 1
+fi
 
 # Detect OS and set appropriate date functions
 if [[ "$OSTYPE" == "darwin"* ]]; then
@@ -67,7 +97,7 @@ PR_JSON=$(gh pr list \
   --repo "$REPO" \
   --state merged \
   --limit 1000 \
-  --json number,createdAt,mergedAt \
+  --json number,createdAt,mergedAt,author \
   --jq ".[] | select(.mergedAt >= \"$CUTOFF\")")
 
 if [[ -z "$PR_JSON" ]]; then
@@ -79,12 +109,13 @@ fi
 total_seconds=0
 count=0
 
-printf "\nPR#    Lead Time          Created At               Merged At\n"
-printf "%s\n" "------------------------------------------------------------"
+printf "\n%-6s  %-18s  %-15s  %-20s  %-20s  %s\n" "PR#" "Author" "Lead Time" "Created" "Merged" "URL"
+printf "%s\n" "--------------------------------------------------------------------------------------------------------------"
 
 # Process each PR and store results in arrays
 while IFS= read -r pr; do
   num=$(jq -r '.number' <<<"$pr")
+  author=$(jq -r '.author.login' <<<"$pr")
   created=$(jq -r '.createdAt' <<<"$pr")
   merged=$(jq -r '.mergedAt' <<<"$pr")
 
@@ -94,9 +125,8 @@ while IFS= read -r pr; do
   delta=$(( ts_merged - ts_created ))
   normalized_time=$(format_time "$delta")
 
-  # Create PR link
   pr_link="https://github.com/$REPO/pull/$num"
-  printf "%s %-15s %s   %s\n" "$pr_link" "$normalized_time" "$created" "$merged"
+  printf "#%-5s  %-18s  %-15s  %-20s  %-20s  %s\n" "$num" "$author" "$normalized_time" "$created" "$merged" "$pr_link"
 
   total_seconds=$(( total_seconds + delta ))
   count=$(( count + 1 ))

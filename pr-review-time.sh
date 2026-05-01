@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 #
+# PR Review Time — measures time to first review and time to merge,
+# with process health indicators for review coverage and responsiveness.
+#
 # Usage: ./pr-review-time.sh owner/repo [count]
 #   owner/repo   GitHub repo (e.g. "octocat/hello-world")
 #   count        number of recent merged PRs to analyze (default: 30)
@@ -10,6 +13,36 @@
 #
 
 set -euo pipefail
+
+usage() {
+  cat <<EOF
+Usage: $(basename "$0") owner/repo [count]
+
+Analyzes PR review times: time to first review, time to merge, review
+coverage, and responsiveness. Makes one API call per PR for review data.
+
+Arguments:
+  owner/repo   GitHub repo (e.g. "octocat/hello-world")
+  count        Number of recent merged PRs to analyze (default: 30)
+
+Examples:
+  $(basename "$0") my-org/my-repo
+  $(basename "$0") my-org/my-repo 50
+
+Requires: gh (authenticated), jq
+EOF
+}
+
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+  usage
+  exit 0
+fi
+
+if [[ $# -lt 1 ]]; then
+  echo "Error: missing required argument owner/repo" >&2
+  usage >&2
+  exit 1
+fi
 
 # Detect OS and set appropriate date functions
 if [[ "$OSTYPE" == "darwin"* ]]; then

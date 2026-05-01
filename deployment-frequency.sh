@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 #
+# Deployment Frequency — how often releases or tags ship, with DORA tier assessment.
+#
 # Usage: ./deployment-frequency.sh owner/repo [days]
 #   owner/repo   GitHub repo (e.g. "octocat/hello-world")
 #   days         lookback window in days (default: 90)
@@ -10,6 +12,36 @@
 #
 
 set -euo pipefail
+
+usage() {
+  cat <<EOF
+Usage: $(basename "$0") owner/repo [days]
+
+Analyzes deployment frequency using GitHub releases and tags. Includes
+a DORA performance tier assessment (Elite/High/Medium/Low).
+
+Arguments:
+  owner/repo   GitHub repo (e.g. "octocat/hello-world")
+  days         Lookback window in days (default: 90)
+
+Examples:
+  $(basename "$0") my-org/my-repo
+  $(basename "$0") my-org/my-repo 180
+
+Requires: gh (authenticated), jq
+EOF
+}
+
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+  usage
+  exit 0
+fi
+
+if [[ $# -lt 1 ]]; then
+  echo "Error: missing required argument owner/repo" >&2
+  usage >&2
+  exit 1
+fi
 
 # Detect OS and set appropriate date functions
 if [[ "$OSTYPE" == "darwin"* ]]; then

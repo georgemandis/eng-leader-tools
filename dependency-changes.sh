@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 #
+# Dependency Changes — tracks dependency update PRs, flags security updates,
+# and measures automation rate (Dependabot, Renovate, etc.).
+#
 # Usage: ./dependency-changes.sh owner/repo [days]
 #   owner/repo   GitHub repo (e.g. "octocat/hello-world")
 #   days         lookback window in days (default: 90)
@@ -10,6 +13,37 @@
 #
 
 set -euo pipefail
+
+usage() {
+  cat <<EOF
+Usage: $(basename "$0") owner/repo [days]
+
+Identifies merged PRs that modify dependency files (package.json, go.mod,
+Cargo.toml, requirements.txt, etc.). Flags security updates, measures
+automation rate, and provides a dependency health assessment.
+
+Arguments:
+  owner/repo   GitHub repo (e.g. "octocat/hello-world")
+  days         Lookback window in days (default: 90)
+
+Examples:
+  $(basename "$0") my-org/my-repo
+  $(basename "$0") my-org/my-repo 180
+
+Requires: gh (authenticated), jq
+EOF
+}
+
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+  usage
+  exit 0
+fi
+
+if [[ $# -lt 1 ]]; then
+  echo "Error: missing required argument owner/repo" >&2
+  usage >&2
+  exit 1
+fi
 
 # Detect OS and set appropriate date functions
 if [[ "$OSTYPE" == "darwin"* ]]; then

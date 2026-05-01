@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 #
+# Contributor File Patterns — shows per-contributor PR size patterns,
+# identifying focused (small PRs) vs. broad-scope (large PRs) contributors.
+#
 # Usage: ./contributor-file-patterns.sh owner/repo [count]
-#   owner/repo   GitHub repo (e.g. "octocat/hello-world")  
+#   owner/repo   GitHub repo (e.g. "octocat/hello-world")
 #   count        number of recent merged PRs to analyze (default: 50)
 #
 # Requirements:
@@ -10,6 +13,37 @@
 #
 
 set -euo pipefail
+
+usage() {
+  cat <<EOF
+Usage: $(basename "$0") owner/repo [count]
+
+Analyzes file change patterns per contributor across recent merged PRs.
+Shows PR count, total/average/max files changed per author, and identifies
+focused (<3 files avg) vs. broad-scope (>10 files avg) contributors.
+
+Arguments:
+  owner/repo   GitHub repo (e.g. "octocat/hello-world")
+  count        Number of recent merged PRs to analyze (default: 50)
+
+Examples:
+  $(basename "$0") my-org/my-repo
+  $(basename "$0") my-org/my-repo 100
+
+Requires: gh (authenticated), jq
+EOF
+}
+
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+  usage
+  exit 0
+fi
+
+if [[ $# -lt 1 ]]; then
+  echo "Error: missing required argument owner/repo" >&2
+  usage >&2
+  exit 1
+fi
 
 REPO="$1"
 COUNT="${2:-50}"

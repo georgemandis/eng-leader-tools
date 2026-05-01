@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 #
+# Files Per PR — shows how many files each recent merged PR touched.
+#
 # Usage: ./files-per-pr.sh owner/repo [count]
 #   owner/repo   GitHub repo (e.g. "octocat/hello-world")
 #   count        number of recent merged PRs to analyze (default: 20)
@@ -10,6 +12,35 @@
 #
 
 set -euo pipefail
+
+usage() {
+  cat <<EOF
+Usage: $(basename "$0") owner/repo [count]
+
+Lists files changed per recent merged PR with author and title.
+
+Arguments:
+  owner/repo   GitHub repo (e.g. "octocat/hello-world")
+  count        Number of recent merged PRs to analyze (default: 20)
+
+Examples:
+  $(basename "$0") my-org/my-repo
+  $(basename "$0") my-org/my-repo 50
+
+Requires: gh (authenticated), jq
+EOF
+}
+
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+  usage
+  exit 0
+fi
+
+if [[ $# -lt 1 ]]; then
+  echo "Error: missing required argument owner/repo" >&2
+  usage >&2
+  exit 1
+fi
 
 REPO="$1"
 COUNT="${2:-20}"

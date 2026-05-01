@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
 #
+# Track Contributions — tracks a user's review and comment activity across
+# an org's PRs (excluding their own). Shows review status, comment counts,
+# and summary stats.
+#
 # Usage: ./track-contributions.sh username [org] [days] [--verbose]
 #   username   GitHub username to track
 #   org        GitHub org (optional, searches across accessible repos if not provided)
@@ -12,6 +16,34 @@
 #
 
 set -euo pipefail
+
+usage() {
+  cat <<EOF
+Usage: $(basename "$0") username [org] [days] [--verbose]
+
+Tracks a user's code review and comment activity on other people's PRs.
+Shows review decisions (approved, changes requested), comment counts,
+and links to each contribution.
+
+Arguments:
+  username     GitHub username to track
+  org          GitHub org (optional, searches all accessible repos if omitted)
+  days         Lookback window in days (default: 30)
+  --verbose    Include full comment text in output
+
+Examples:
+  $(basename "$0") janedoe
+  $(basename "$0") janedoe my-org 60
+  $(basename "$0") janedoe my-org 30 --verbose
+
+Requires: gh (authenticated), jq
+EOF
+}
+
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+  usage
+  exit 0
+fi
 
 VERBOSE=false
 

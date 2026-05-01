@@ -14,13 +14,26 @@ while getopts "o:r:l:ah" opt; do
     r) REPO="$OPTARG" ;;
     l) LIMIT="$OPTARG" ;;
     a) ONLY_UNAPPROVED=false ;;
-    h) 
-      echo "Usage: $0 [-o owner] [-r repo] [-l limit] [-a]"
-      echo "  -o owner    GitHub owner/organization (default: my-org)"
-      echo "  -r repo     Repository name (default: my-repo)"
-      echo "  -l limit    Number of PRs to fetch (default: 100)"
-      echo "  -a          Include approved PRs (default: only show unapproved)"
-      echo "  -h          Show this help"
+    h)
+      cat <<EOF
+Usage: $(basename "$0") [-o owner] [-r repo] [-l limit] [-a]
+
+Surfaces small open PRs (1-2 files, non-draft) that haven't been
+approved yet — quick wins for reviewers looking to help unblock work.
+
+Options:
+  -o owner    GitHub owner/organization (default: my-org)
+  -r repo     Repository name (default: my-repo)
+  -l limit    Number of PRs to fetch (default: 100)
+  -a          Include approved PRs (default: only show unapproved)
+  -h          Show this help
+
+Examples:
+  $(basename "$0") -o my-org -r my-repo
+  $(basename "$0") -o my-org -r my-repo -a -l 200
+
+Requires: gh (authenticated), jq
+EOF
       exit 0
       ;;
     \?) 

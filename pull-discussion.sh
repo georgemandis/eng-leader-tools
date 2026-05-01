@@ -1,14 +1,49 @@
 #!/usr/bin/env bash
 #
-# Usage: ./pr_comments.sh owner/repo PR_NUMBER
-# Example: ./pr_comments.sh my-org/my-repo 42 | llm "Please summarize the following PR discussion:"
+# Pull Discussion — fetches full PR details, comments, review comments,
+# and changed files as structured text. Pipe to analyze-discussion.sh
+# or an LLM for summarization.
+#
+# Usage: ./pull-discussion.sh owner/repo PR_NUMBER
+# Example: ./pull-discussion.sh my-org/my-repo 42 | ./analyze-discussion.sh
 #
 # Requirements:
-#   • gh (GitHub CLI) authenticated
-#   • jq
+#   - gh (GitHub CLI) authenticated
+#   - jq
 #
 
 set -euo pipefail
+
+usage() {
+  cat <<EOF
+Usage: $(basename "$0") owner/repo PR_NUMBER
+
+Fetches full PR discussion: details, issue comments, review comments,
+and changed files. Output is structured text suitable for piping to
+an LLM or analyze-discussion.sh.
+
+Arguments:
+  owner/repo   GitHub repo (e.g. "octocat/hello-world")
+  PR_NUMBER    Pull request number
+
+Examples:
+  $(basename "$0") my-org/my-repo 42
+  $(basename "$0") my-org/my-repo 42 | ./analyze-discussion.sh
+
+Requires: gh (authenticated), jq
+EOF
+}
+
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+  usage
+  exit 0
+fi
+
+if [[ $# -lt 2 ]]; then
+  echo "Error: missing required arguments" >&2
+  usage >&2
+  exit 1
+fi
 
 REPO="$1"    # e.g. "octocat/hello-world"
 PR_NUM="$2"  # e.g. "42"

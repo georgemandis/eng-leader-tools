@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 #
+# Code Churn — identifies file hotspots (files changed repeatedly across PRs),
+# top churn directories, and risk assessment.
+#
 # Usage: ./code-churn.sh owner/repo [days] [min_changes]
 #   owner/repo     GitHub repo (e.g. "octocat/hello-world")
 #   days           lookback window in days (default: 30)
@@ -11,6 +14,38 @@
 #
 
 set -euo pipefail
+
+usage() {
+  cat <<EOF
+Usage: $(basename "$0") owner/repo [days] [min_changes]
+
+Identifies file hotspots by analyzing which files are changed most
+frequently across merged PRs. Includes directory-level analysis and
+risk assessment.
+
+Arguments:
+  owner/repo     GitHub repo (e.g. "octocat/hello-world")
+  days           Lookback window in days (default: 30)
+  min_changes    Minimum changes to flag as hotspot (default: 3)
+
+Examples:
+  $(basename "$0") my-org/my-repo
+  $(basename "$0") my-org/my-repo 60 5
+
+Requires: gh (authenticated), jq
+EOF
+}
+
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+  usage
+  exit 0
+fi
+
+if [[ $# -lt 1 ]]; then
+  echo "Error: missing required argument owner/repo" >&2
+  usage >&2
+  exit 1
+fi
 
 # Detect OS and set appropriate date functions
 if [[ "$OSTYPE" == "darwin"* ]]; then

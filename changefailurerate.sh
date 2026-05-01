@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 #
-# Usage: ./change_failure_rate.sh owner/repo [days]
+# Change Failure Rate — percentage of merged PRs that are rollbacks or hotfixes.
+#
+# Usage: ./changefailurerate.sh owner/repo [days]
 #   owner/repo   GitHub repo (e.g. "octocat/hello-world")
 #   days         lookback window in days (default: 30)
 #
@@ -10,6 +12,36 @@
 #
 
 set -euo pipefail
+
+usage() {
+  cat <<EOF
+Usage: $(basename "$0") owner/repo [days]
+
+Calculates change failure rate by identifying merged PRs with "rollback"
+or "hotfix" in the title as a proportion of all merged PRs.
+
+Arguments:
+  owner/repo   GitHub repo (e.g. "octocat/hello-world")
+  days         Lookback window in days (default: 30)
+
+Examples:
+  $(basename "$0") my-org/my-repo
+  $(basename "$0") my-org/my-repo 90
+
+Requires: gh (authenticated), jq
+EOF
+}
+
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+  usage
+  exit 0
+fi
+
+if [[ $# -lt 1 ]]; then
+  echo "Error: missing required argument owner/repo" >&2
+  usage >&2
+  exit 1
+fi
 
 # Detect OS and set appropriate date functions
 if [[ "$OSTYPE" == "darwin"* ]]; then

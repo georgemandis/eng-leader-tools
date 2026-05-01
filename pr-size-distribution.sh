@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 #
+# PR Size Distribution — categorizes PRs by size (XS through XL) and
+# correlates size with review time. Includes distribution health assessment.
+#
 # Usage: ./pr-size-distribution.sh owner/repo [count]
 #   owner/repo   GitHub repo (e.g. "octocat/hello-world")
 #   count        number of recent merged PRs to analyze (default: 50)
@@ -10,6 +13,37 @@
 #
 
 set -euo pipefail
+
+usage() {
+  cat <<EOF
+Usage: $(basename "$0") owner/repo [count]
+
+Categorizes merged PRs into size tiers (XS/S/M/L/XL) based on lines
+changed and files touched. Shows size distribution, average review times
+per tier, and health assessment. Makes one API call per PR for file counts.
+
+Arguments:
+  owner/repo   GitHub repo (e.g. "octocat/hello-world")
+  count        Number of recent merged PRs to analyze (default: 50)
+
+Examples:
+  $(basename "$0") my-org/my-repo
+  $(basename "$0") my-org/my-repo 100
+
+Requires: gh (authenticated), jq
+EOF
+}
+
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+  usage
+  exit 0
+fi
+
+if [[ $# -lt 1 ]]; then
+  echo "Error: missing required argument owner/repo" >&2
+  usage >&2
+  exit 1
+fi
 
 # Detect OS and set appropriate date functions
 if [[ "$OSTYPE" == "darwin"* ]]; then
