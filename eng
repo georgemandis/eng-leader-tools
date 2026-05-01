@@ -7,8 +7,14 @@ set -euo pipefail
 
 VERSION="0.1.0"
 
-# Resolve where the scripts live (same directory as this wrapper)
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+# Resolve where the scripts live (follow symlinks to find real location)
+SOURCE="$0"
+while [[ -L "$SOURCE" ]]; do
+  DIR="$(cd "$(dirname "$SOURCE")" && pwd)"
+  SOURCE="$(readlink "$SOURCE")"
+  [[ "$SOURCE" != /* ]] && SOURCE="$DIR/$SOURCE"
+done
+SCRIPT_DIR="$(cd "$(dirname "$SOURCE")" && pwd)"
 
 # Map subcommand to script filename
 resolve_script() {
