@@ -5,7 +5,7 @@
 
 set -euo pipefail
 
-VERSION="0.1.0"
+VERSION="0.1.1"
 
 # Resolve where the scripts live (follow symlinks to find real location)
 SOURCE="$0"
@@ -79,6 +79,9 @@ Options:
   --completions SHELL    Output shell completions (bash, zsh, fish)
 
 All commands support --help for detailed usage.
+
+Created by George Mandis <george@mand.is>
+https://github.com/georgemandis/eng-leader-tools
 EOF
 }
 
