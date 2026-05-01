@@ -2,8 +2,8 @@
 set -euo pipefail
 
 # Default values
-OWNER="my-org"
-REPO="my-repo"
+OWNER=""
+REPO=""
 LIMIT=100
 ONLY_UNAPPROVED=true
 
@@ -16,14 +16,14 @@ while getopts "o:r:l:ah" opt; do
     a) ONLY_UNAPPROVED=false ;;
     h)
       cat <<EOF
-Usage: $(basename "$0") [-o owner] [-r repo] [-l limit] [-a]
+Usage: $(basename "$0") -o owner -r repo [-l limit] [-a]
 
 Surfaces small open PRs (1-2 files, non-draft) that haven't been
 approved yet — quick wins for reviewers looking to help unblock work.
 
 Options:
-  -o owner    GitHub owner/organization (default: my-org)
-  -r repo     Repository name (default: my-repo)
+  -o owner    GitHub owner/organization (required)
+  -r repo     Repository name (required)
   -l limit    Number of PRs to fetch (default: 100)
   -a          Include approved PRs (default: only show unapproved)
   -h          Show this help
@@ -36,7 +36,7 @@ Requires: gh (authenticated), jq
 EOF
       exit 0
       ;;
-    \?) 
+    \?)
       echo "Invalid option: -$OPTARG" >&2
       echo "Use -h for help"
       exit 1
@@ -44,10 +44,11 @@ EOF
   esac
 done
 
-# Allow environment variable overrides (maintains backward compatibility)
-OWNER="${OWNER:-my-org}"
-REPO="${REPO:-my-repo}"
-LIMIT="${LIMIT:-100}"
+if [[ -z "$OWNER" || -z "$REPO" ]]; then
+  echo "Error: -o owner and -r repo are required" >&2
+  echo "Use -h for help" >&2
+  exit 1
+fi
 
 # Get PRs and filter by changed files count (1 or 2 files) and approval status
 gh pr list \
