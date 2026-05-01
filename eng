@@ -5,7 +5,7 @@
 
 set -euo pipefail
 
-VERSION="0.1.1"
+VERSION="0.1.2"
 
 # Resolve where the scripts live (follow symlinks to find real location)
 SOURCE="$0"

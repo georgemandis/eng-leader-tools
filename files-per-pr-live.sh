@@ -54,7 +54,7 @@ PR_JSON=$(gh pr list \
   --repo "$REPO" \
   --state open \
   --limit "$COUNT" \
-  --json number,title,createdAt,author)
+  --json number,title,createdAt,author,url)
 
 if [[ -z "$PR_JSON" ]] || [[ "$PR_JSON" == "[]" ]]; then
   echo "No open PRs found."
@@ -64,8 +64,8 @@ fi
 total_files=0
 total_prs=0
 
-printf "\nPR#    Files  Author              Title\n"
-printf "%s\n" "─────────────────────────────────────────────────────────────────────"
+printf "\n%-6s %-6s %-18s %-40s %s\n" "PR#" "Files" "Author" "Title" "URL"
+printf "%s\n" "──────────────────────────────────────────────────────────────────────────────────────────────────────"
 
 # Process each PR to get file count
 echo "$PR_JSON" | jq -r '.[] | @base64' | while IFS= read -r pr_b64; do
@@ -74,7 +74,8 @@ echo "$PR_JSON" | jq -r '.[] | @base64' | while IFS= read -r pr_b64; do
   num=$(echo "$pr" | jq -r '.number')
   title=$(echo "$pr" | jq -r '.title')
   author=$(echo "$pr" | jq -r '.author.login')
-  
+  url=$(echo "$pr" | jq -r '.url')
+
   # Fetch files for this PR
   files_count=$(gh api "repos/$REPO/pulls/$num/files" --paginate | jq 'length')
   
@@ -84,7 +85,7 @@ echo "$PR_JSON" | jq -r '.[] | @base64' | while IFS= read -r pr_b64; do
     truncated_title="${truncated_title}…"
   fi
   
-  printf "#%-5s %-5s %-18s %s\n" "$num" "$files_count" "$author" "$truncated_title"
+  printf "#%-5s %-5s %-18s %-40s %s\n" "$num" "$files_count" "$author" "$truncated_title" "$url"
   
   total_files=$((total_files + files_count))
   total_prs=$((total_prs + 1))
@@ -105,7 +106,8 @@ if (( total_prs > 0 )); then
     
     if (( files_count > 10 )); then
       title=$(echo "$pr" | jq -r '.title' | cut -c1-50)
-      printf "  • #%s (%d files): %s\n" "$num" "$files_count" "$title"
+      url=$(echo "$pr" | jq -r '.url')
+      printf "  • #%s (%d files): %s — %s\n" "$num" "$files_count" "$title" "$url"
     fi
   done
 fi

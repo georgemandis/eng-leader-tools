@@ -85,7 +85,7 @@ PR_JSON=$(gh pr list \
   --repo "$REPO" \
   --state merged \
   --limit "$COUNT" \
-  --json number,createdAt,mergedAt,author)
+  --json number,createdAt,mergedAt,author,url)
 
 if [[ -z "$PR_JSON" ]] || [[ "$PR_JSON" == "[]" ]]; then
   echo "No merged PRs found."
@@ -99,8 +99,8 @@ total_prs=0
 
 printf "\nPR Review Analysis:\n"
 printf "──────────────────\n"
-printf "%-6s %-8s %-8s %-8s %s\n" "PR#" "1st Rev" "Merge" "Reviews" "Author"
-printf "%s\n" "────────────────────────────────────────────────────────"
+printf "%-6s %-8s %-8s %-8s %-18s %s\n" "PR#" "1st Rev" "Merge" "Reviews" "Author" "URL"
+printf "%s\n" "──────────────────────────────────────────────────────────────────────────────────────"
 
 # Process each PR
 echo "$PR_JSON" | jq -r '.[] | @base64' | while IFS= read -r pr_b64; do
@@ -110,7 +110,8 @@ echo "$PR_JSON" | jq -r '.[] | @base64' | while IFS= read -r pr_b64; do
   created=$(echo "$pr" | jq -r '.createdAt')
   merged=$(echo "$pr" | jq -r '.mergedAt')
   author=$(echo "$pr" | jq -r '.author.login')
-  
+  url=$(echo "$pr" | jq -r '.url')
+
   # Get review information
   reviews=$(gh api "repos/$REPO/pulls/$num/reviews" --paginate)
   review_count=$(echo "$reviews" | jq 'length')
@@ -133,7 +134,7 @@ echo "$PR_JSON" | jq -r '.[] | @base64' | while IFS= read -r pr_b64; do
     first_review_time="N/A"
   fi
   
-  printf "#%-5s %-8s %-8s %-8s %s\n" "$num" "$first_review_time" "$merge_time" "$review_count" "$author"
+  printf "#%-5s %-8s %-8s %-8s %-18s %s\n" "$num" "$first_review_time" "$merge_time" "$review_count" "$author" "$url"
   
   total_merge_time=$((total_merge_time + merge_delta))
   total_prs=$((total_prs + 1))

@@ -100,8 +100,8 @@ echo "→  Change Failure Rate: $PCT%"
 
 if [[ $FAIL_COUNT -gt 0 ]]; then
   echo
-  echo "Failed PR numbers:"
+  echo "Failed PRs:"
   for n in "${FAIL_PR_NUMS[@]}"; do
-    echo "  • #$n"
+    echo "  • #$n — https://github.com/$REPO/pull/$n"
   done
 fi

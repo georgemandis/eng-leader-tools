@@ -111,7 +111,7 @@ PR_JSON=$(gh pr list \
   --repo "$REPO" \
   --state merged \
   --limit "$COUNT" \
-  --json number,title,additions,deletions,createdAt,mergedAt,author)
+  --json number,title,additions,deletions,createdAt,mergedAt,author,url)
 
 if [[ -z "$PR_JSON" ]] || [[ "$PR_JSON" == "[]" ]]; then
   echo "No merged PRs found."
@@ -134,8 +134,8 @@ total_deletions=0
 
 printf "\nPR Size Analysis:\n"
 printf "─────────────────\n"
-printf "%-6s %-4s %-5s %-6s %-6s %-8s %s\n" "PR#" "Size" "Files" "Lines" "Review" "Author" "Title"
-printf "%s\n" "────────────────────────────────────────────────────────────────────────"
+printf "%-6s %-4s %-5s %-6s %-8s %-8s %-25s %s\n" "PR#" "Size" "Files" "Lines" "Review" "Author" "Title" "URL"
+printf "%s\n" "──────────────────────────────────────────────────────────────────────────────────────────────────────"
 
 # Analyze each PR
 echo "$PR_JSON" | jq -r '.[] | @base64' | while IFS= read -r pr_b64; do
@@ -148,7 +148,8 @@ echo "$PR_JSON" | jq -r '.[] | @base64' | while IFS= read -r pr_b64; do
   created=$(echo "$pr" | jq -r '.createdAt')
   merged=$(echo "$pr" | jq -r '.mergedAt')
   author=$(echo "$pr" | jq -r '.author.login')
-  
+  url=$(echo "$pr" | jq -r '.url')
+
   # Get file count
   files_count=$(gh api "repos/$REPO/pulls/$num/files" --paginate | jq 'length')
   
@@ -167,8 +168,8 @@ echo "$PR_JSON" | jq -r '.[] | @base64' | while IFS= read -r pr_b64; do
   short_title=$(echo "$title" | cut -c1-25)
   short_author=$(echo "$author" | cut -c1-8)
   
-  printf "#%-5s %-4s %-5s %-6s %-8s %-8s %s\n" \
-    "$num" "$size" "$files_count" "$total_lines" "$review_time" "$short_author" "$short_title"
+  printf "#%-5s %-4s %-5s %-6s %-8s %-8s %-25s %s\n" \
+    "$num" "$size" "$files_count" "$total_lines" "$review_time" "$short_author" "$short_title" "$url"
   
   # Accumulate stats
   size_counts[$size]=$((size_counts[$size] + 1))

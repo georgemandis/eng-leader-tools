@@ -104,7 +104,7 @@ PR_JSON=$(gh pr list \
   --repo "$REPO" \
   --state merged \
   --limit 200 \
-  --json number,title,mergedAt,author \
+  --json number,title,mergedAt,author,url \
   --jq ".[] | select(.mergedAt >= \"$CUTOFF\")")
 
 if [[ -z "$PR_JSON" ]]; then
@@ -127,7 +127,8 @@ echo "$PR_JSON" | jq -r '@base64' | while IFS= read -r pr_b64; do
   title=$(echo "$pr" | jq -r '.title')
   merged_at=$(echo "$pr" | jq -r '.mergedAt')
   author=$(echo "$pr" | jq -r '.author.login')
-  
+  url=$(echo "$pr" | jq -r '.url')
+
   # Get files changed in this PR
   files_json=$(gh api "repos/$REPO/pulls/$num/files" --paginate)
   
@@ -163,6 +164,7 @@ echo "$PR_JSON" | jq -r '@base64' | while IFS= read -r pr_b64; do
     
     printf "#%-5s %s %-18s%s%s\n" "$num" "$formatted_date" "$author" "$is_security" "$is_automated"
     printf "       %s\n" "$(echo "$title" | cut -c1-60)"
+    printf "       %s\n" "$url"
     printf "       Files: %s\n\n" "$(IFS=', '; echo "${dependency_files[*]}")"
     
     dependency_prs+=("$num")
