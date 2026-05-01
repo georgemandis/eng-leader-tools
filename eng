@@ -1,0 +1,195 @@
+#!/usr/bin/env bash
+#
+# eng — unified CLI for eng-leader-tools
+#
+
+set -euo pipefail
+
+VERSION="0.1.0"
+
+# Resolve where the scripts live (same directory as this wrapper)
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+# Map subcommand to script filename
+resolve_script() {
+  case "$1" in
+    lead-time)             echo "leadtimetochange.sh" ;;
+    lead-time-user)        echo "leadtimetochange-user.sh" ;;
+    change-failure-rate)   echo "changefailurerate.sh" ;;
+    deploy-frequency)      echo "deployment-frequency.sh" ;;
+    review-time)           echo "pr-review-time.sh" ;;
+    pr-size)               echo "pr-size-distribution.sh" ;;
+    files-per-pr)          echo "files-per-pr.sh" ;;
+    files-per-pr-live)     echo "files-per-pr-live.sh" ;;
+    stale-prs)             echo "stale-prs.sh" ;;
+    quick-reviews)         echo "quick-reviews.sh" ;;
+    review-load)           echo "review-load.sh" ;;
+    code-churn)            echo "code-churn.sh" ;;
+    contributor-patterns)  echo "contributor-file-patterns.sh" ;;
+    lottery-factor)        echo "lottery-factor.sh" ;;
+    dependency-changes)    echo "dependency-changes.sh" ;;
+    contributions)         echo "track-contributions.sh" ;;
+    pull-discussion)       echo "pull-discussion.sh" ;;
+    analyze-discussion)    echo "analyze-discussion.sh" ;;
+    *) return 1 ;;
+  esac
+}
+
+show_help() {
+  cat <<EOF
+eng v${VERSION} — engineering leadership metrics from your terminal
+
+Usage: eng <command> [args...]
+
+DORA Metrics:
+  lead-time              Average time from PR creation to merge
+  lead-time-user         Lead time filtered to a specific contributor
+  change-failure-rate    Percentage of merged PRs flagged as rollbacks/hotfixes
+  deploy-frequency       How often releases/tags ship
+
+PR Health:
+  review-time            Time to first review and time to merge
+  pr-size                PR size distribution (XS-XL) with review time correlation
+  files-per-pr           Files changed per merged PR
+  files-per-pr-live      Files changed per open PR
+  stale-prs              Open PRs grouped by age
+  quick-reviews          Small open PRs that need review
+  review-load            Review work distribution across team members
+
+Codebase & Contributors:
+  code-churn             File hotspots — files changed repeatedly
+  contributor-patterns   Per-contributor PR size patterns
+  lottery-factor         Knowledge concentration risk
+  dependency-changes     Dependency update tracking
+  contributions          Track a user's review/comment activity
+
+Discussion:
+  pull-discussion        Pull full PR discussion as text
+  analyze-discussion     Pipe discussion into LLM for summarization
+
+Options:
+  -h, --help             Show this help
+  -v, --version          Show version
+  --completions SHELL    Output shell completions (bash, zsh, fish)
+
+All commands support --help for detailed usage.
+EOF
+}
+
+generate_completions() {
+  local shell="$1"
+  local cmds="lead-time lead-time-user change-failure-rate deploy-frequency review-time pr-size files-per-pr files-per-pr-live stale-prs quick-reviews review-load code-churn contributor-patterns lottery-factor dependency-changes contributions pull-discussion analyze-discussion"
+
+  case "$shell" in
+    bash)
+      cat <<EOF
+_eng_completions() {
+  local cur="\${COMP_WORDS[COMP_CWORD]}"
+  if [[ \$COMP_CWORD -eq 1 ]]; then
+    COMPREPLY=(\$(compgen -W "$cmds --help --version --completions" -- "\$cur"))
+  elif [[ \$COMP_CWORD -ge 2 ]]; then
+    COMPREPLY=(\$(compgen -W "--help --csv" -- "\$cur"))
+  fi
+}
+complete -F _eng_completions eng
+EOF
+      ;;
+    zsh)
+      cat <<EOF
+#compdef eng
+
+_eng() {
+  local -a commands=(
+    'lead-time:Average time from PR creation to merge'
+    'lead-time-user:Lead time for a specific contributor'
+    'change-failure-rate:Rollback/hotfix rate'
+    'deploy-frequency:Release/tag frequency'
+    'review-time:Time to first review and merge'
+    'pr-size:PR size distribution'
+    'files-per-pr:Files changed per merged PR'
+    'files-per-pr-live:Files changed per open PR'
+    'stale-prs:Open PRs grouped by age'
+    'quick-reviews:Small PRs needing review'
+    'review-load:Review distribution across team'
+    'code-churn:File change hotspots'
+    'contributor-patterns:Per-contributor PR patterns'
+    'lottery-factor:Knowledge concentration risk'
+    'dependency-changes:Dependency update tracking'
+    'contributions:User review/comment activity'
+    'pull-discussion:Full PR discussion text'
+    'analyze-discussion:LLM discussion summary'
+  )
+
+  if (( CURRENT == 2 )); then
+    _describe 'command' commands
+  else
+    _arguments '--help[Show help]' '--csv[Output as CSV]' '*:argument:_files'
+  fi
+}
+
+_eng
+EOF
+      ;;
+    fish)
+      cat <<'FISHEOF'
+# Fish completions for eng
+set -l commands lead-time lead-time-user change-failure-rate deploy-frequency review-time pr-size files-per-pr files-per-pr-live stale-prs quick-reviews review-load code-churn contributor-patterns lottery-factor dependency-changes contributions pull-discussion analyze-discussion
+
+complete -c eng -f
+complete -c eng -n "not __fish_seen_subcommand_from $commands" -a lead-time -d "Average time from PR creation to merge"
+complete -c eng -n "not __fish_seen_subcommand_from $commands" -a lead-time-user -d "Lead time for a specific contributor"
+complete -c eng -n "not __fish_seen_subcommand_from $commands" -a change-failure-rate -d "Rollback/hotfix rate"
+complete -c eng -n "not __fish_seen_subcommand_from $commands" -a deploy-frequency -d "Release/tag frequency"
+complete -c eng -n "not __fish_seen_subcommand_from $commands" -a review-time -d "Time to first review and merge"
+complete -c eng -n "not __fish_seen_subcommand_from $commands" -a pr-size -d "PR size distribution"
+complete -c eng -n "not __fish_seen_subcommand_from $commands" -a files-per-pr -d "Files changed per merged PR"
+complete -c eng -n "not __fish_seen_subcommand_from $commands" -a files-per-pr-live -d "Files changed per open PR"
+complete -c eng -n "not __fish_seen_subcommand_from $commands" -a stale-prs -d "Open PRs grouped by age"
+complete -c eng -n "not __fish_seen_subcommand_from $commands" -a quick-reviews -d "Small PRs needing review"
+complete -c eng -n "not __fish_seen_subcommand_from $commands" -a review-load -d "Review distribution across team"
+complete -c eng -n "not __fish_seen_subcommand_from $commands" -a code-churn -d "File change hotspots"
+complete -c eng -n "not __fish_seen_subcommand_from $commands" -a contributor-patterns -d "Per-contributor PR patterns"
+complete -c eng -n "not __fish_seen_subcommand_from $commands" -a lottery-factor -d "Knowledge concentration risk"
+complete -c eng -n "not __fish_seen_subcommand_from $commands" -a dependency-changes -d "Dependency update tracking"
+complete -c eng -n "not __fish_seen_subcommand_from $commands" -a contributions -d "User review/comment activity"
+complete -c eng -n "not __fish_seen_subcommand_from $commands" -a pull-discussion -d "Full PR discussion text"
+complete -c eng -n "not __fish_seen_subcommand_from $commands" -a analyze-discussion -d "LLM discussion summary"
+complete -c eng -n "__fish_seen_subcommand_from $commands" -l help -d "Show help"
+complete -c eng -n "__fish_seen_subcommand_from $commands" -l csv -d "Output as CSV"
+FISHEOF
+      ;;
+    *)
+      echo "Unsupported shell: $shell (use bash, zsh, or fish)" >&2
+      exit 1
+      ;;
+  esac
+}
+
+# Main dispatch
+case "${1:-}" in
+  -h|--help|help|"")
+    show_help
+    ;;
+  -v|--version)
+    echo "eng v${VERSION}"
+    ;;
+  --completions)
+    if [[ -z "${2:-}" ]]; then
+      echo "Usage: eng --completions <bash|zsh|fish>" >&2
+      exit 1
+    fi
+    generate_completions "$2"
+    ;;
+  *)
+    cmd="$1"
+    shift
+
+    script=$(resolve_script "$cmd" 2>/dev/null) || {
+      echo "Unknown command: $cmd" >&2
+      echo "Run 'eng --help' for available commands." >&2
+      exit 1
+    }
+
+    exec bash "${SCRIPT_DIR}/${script}" "$@"
+    ;;
+esac
