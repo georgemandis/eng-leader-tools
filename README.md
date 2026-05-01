@@ -7,6 +7,7 @@ A collection of bash scripts for engineering leadership metrics and team health 
 - [GitHub CLI (`gh`)](https://cli.github.com/) — authenticated
 - [jq](https://jqlang.github.io/jq/)
 - macOS or Linux (date handling is cross-platform)
+- [llm](https://github.com/simonw/llm) — optional, only needed for `analyze-discussion.sh`
 
 ## Scripts
 

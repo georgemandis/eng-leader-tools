@@ -30,4 +30,10 @@ if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
   exit 0
 fi
 
+if ! command -v llm >/dev/null 2>&1; then
+  echo "Error: 'llm' is not installed. Install it with: brew install llm (or pip install llm)" >&2
+  echo "See: https://github.com/simonw/llm" >&2
+  exit 2
+fi
+
 cat - | llm --system "Analyze the conversation for this PR. Summarize what was broadly discussed, agreed upon, disagreed upon or anything else notable. Focus primarily on discussion between actual Github contributors and not automated comments from services and bots, unless they seem significant."
