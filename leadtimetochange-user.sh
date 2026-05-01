@@ -29,15 +29,29 @@ Arguments:
 Examples:
   $(basename "$0") my-org/my-repo janedoe
   $(basename "$0") my-org/my-repo janedoe 60
+  $(basename "$0") my-org/my-repo janedoe --csv > lead-times.csv
+
+Options:
+  --csv        Output as CSV instead of formatted table
 
 Requires: gh (authenticated), jq
 EOF
 }
 
-if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
-  usage
-  exit 0
-fi
+CSV=false
+for arg in "$@"; do
+  case "$arg" in
+    -h|--help) usage; exit 0 ;;
+    --csv) CSV=true ;;
+  esac
+done
+
+# Strip --csv from positional args
+args=()
+for arg in "$@"; do
+  [[ "$arg" != "--csv" ]] && args+=("$arg")
+done
+set -- "${args[@]+"${args[@]}"}"
 
 # Detect OS and set appropriate date functions
 if [[ "$OSTYPE" == "darwin"* ]]; then
@@ -96,7 +110,7 @@ DAYS="${3:-30}"
 # Calculate the cutoff timestamp (ISO 8601) for filtering merged PRs
 CUTOFF=$(get_cutoff_date "$DAYS")
 
-echo "Fetching PRs by @$USERNAME merged since $CUTOFF in $REPO …"
+[[ "$CSV" == "false" ]] && echo "Fetching PRs by @$USERNAME merged since $CUTOFF in $REPO …"
 # Fetch up to 1000 merged PRs (adjust --limit if needed), output JSON
 PR_JSON=$(gh pr list \
   --repo "$REPO" \
@@ -107,7 +121,7 @@ PR_JSON=$(gh pr list \
   --jq ".[] | select(.mergedAt >= \"$CUTOFF\")")
 
 if [[ -z "$PR_JSON" ]]; then
-  echo "No PRs by @$USERNAME merged in the last $DAYS days."
+  echo "No PRs by @$USERNAME merged in the last $DAYS days." >&2
   exit 0
 fi
 
@@ -115,8 +129,12 @@ fi
 total_seconds=0
 count=0
 
-printf "\n%-6s  %-15s  %-20s  %-20s  %s\n" "PR#" "Lead Time" "Created" "Merged" "URL"
-printf "%s\n" "-----------------------------------------------------------------------------------------------"
+if [[ "$CSV" == "true" ]]; then
+  echo "PR,Lead Time,Lead Time (seconds),Created,Merged,URL"
+else
+  printf "\n%-6s  %-15s  %-20s  %-20s  %s\n" "PR#" "Lead Time" "Created" "Merged" "URL"
+  printf "%s\n" "-----------------------------------------------------------------------------------------------"
+fi
 
 # Process each PR and store results in arrays
 while IFS= read -r pr; do
@@ -131,13 +149,18 @@ while IFS= read -r pr; do
   normalized_time=$(format_time "$delta")
 
   pr_link="https://github.com/$REPO/pull/$num"
-  printf "#%-5s  %-15s  %-20s  %-20s  %s\n" "$num" "$normalized_time" "$created" "$merged" "$pr_link"
+
+  if [[ "$CSV" == "true" ]]; then
+    printf "%s,%s,%s,%s,%s,%s\n" "$num" "$normalized_time" "$delta" "$created" "$merged" "$pr_link"
+  else
+    printf "#%-5s  %-15s  %-20s  %-20s  %s\n" "$num" "$normalized_time" "$created" "$merged" "$pr_link"
+  fi
 
   total_seconds=$(( total_seconds + delta ))
   count=$(( count + 1 ))
 done <<< "$PR_JSON"
 
-if (( count > 0 )); then
+if (( count > 0 )) && [[ "$CSV" == "false" ]]; then
   avg_sec=$(( total_seconds / count ))
   avg_time=$(format_time "$avg_sec")
   printf "\nAnalyzed %d PR(s) by @%s • Average lead time: %s\n" "$count" "$USERNAME" "$avg_time"

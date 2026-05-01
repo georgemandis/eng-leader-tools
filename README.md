@@ -24,10 +24,12 @@ A collection of bash scripts for engineering leadership metrics and team health 
 | Script | Description |
 |--------|-------------|
 | `pr-review-time.sh` | Time to first review and time to merge, with process health indicators |
-| `pr-size-distribution.sh` | Categorizes PRs by size (XS–XL) and correlates size with review time |
+| `pr-size-distribution.sh` | Categorizes PRs by size (XS-XL) and correlates size with review time |
 | `files-per-pr.sh` | Files changed per merged PR |
 | `files-per-pr-live.sh` | Files changed per *open* PR, flags large ones needing review attention |
-| `quick-reviews.sh` | Surfaces small open PRs (1–2 files) that haven't been approved yet |
+| `stale-prs.sh` | Open PRs grouped by age, highlights work that may need attention |
+| `quick-reviews.sh` | Surfaces small open PRs (1-2 files) that haven't been approved yet |
+| `review-load.sh` | How review work is distributed across team members |
 
 ### Codebase & Contributor Analysis
 
@@ -35,6 +37,7 @@ A collection of bash scripts for engineering leadership metrics and team health 
 |--------|-------------|
 | `code-churn.sh` | Identifies file hotspots — files changed repeatedly across PRs |
 | `contributor-file-patterns.sh` | Shows per-contributor PR size patterns (focused vs. broad-scope) |
+| `lottery-factor.sh` | Knowledge concentration risk — files where only 1-2 people have contributed |
 | `dependency-changes.sh` | Tracks dependency update PRs, flags security updates, measures automation |
 | `track-contributions.sh` | Tracks a user's review and comment activity across an org |
 
@@ -78,6 +81,15 @@ All scripts follow a consistent pattern:
 # Are PRs too big?
 ./pr-size-distribution.sh my-org/my-repo
 
+# Any stale PRs that need attention?
+./stale-prs.sh my-org/my-repo
+
+# Who's doing the most code review?
+./review-load.sh my-org/my-repo
+
+# Where's the knowledge concentration risk?
+./lottery-factor.sh my-org/my-repo
+
 # What files keep getting changed?
 ./code-churn.sh my-org/my-repo 30 3
 
@@ -96,6 +108,19 @@ All scripts follow a consistent pattern:
 # Summarize a PR discussion with an LLM
 ./pull-discussion.sh my-org/my-repo 42 | ./analyze-discussion.sh
 ```
+
+## CSV Output
+
+Many scripts support `--csv` for machine-readable output, making it easy to pipe into spreadsheets, databases, or other tools:
+
+```bash
+./leadtimetochange.sh my-org/my-repo 90 --csv > lead-times.csv
+./stale-prs.sh my-org/my-repo --csv > stale-prs.csv
+./review-load.sh my-org/my-repo --csv > review-load.csv
+./lottery-factor.sh my-org/my-repo --csv > lottery-factor.csv
+```
+
+Scripts with `--csv` support: `leadtimetochange.sh`, `leadtimetochange-user.sh`, `stale-prs.sh`, `review-load.sh`, `lottery-factor.sh`.
 
 ## Output
 
