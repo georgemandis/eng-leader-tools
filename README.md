@@ -4,6 +4,8 @@ A collection of bash scripts for engineering leadership metrics and team health 
 
 ## Install
 
+This project is intentionally small, portable and lean—it is literally just a folder full of bash files! It's based on actual scripts I've used in previous roles to better understand the engineering landscape. While I've tidied it up and made the whole suite available via package managers (more below), there's nothing stopping you from pulling down the repo and copying just the pieces you need.
+
 ### Homebrew (macOS/Linux)
 
 ```bash
