@@ -150,6 +150,10 @@ eng --completions fish > ~/.config/fish/completions/eng.fish
 
 All commands output formatted tables and summaries to stdout. Many include health assessments with color-coded indicators for quick interpretation. No files are written — pipe or redirect output as needed.
 
+## Sponsor
+
+If you find this project useful, please consider [sponsoring me](https://github.com/sponsors/georgemandis).
+
 ## License
 
 MIT
