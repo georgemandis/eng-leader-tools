@@ -5,7 +5,7 @@
 
 set -euo pipefail
 
-VERSION="0.1.2"
+VERSION="0.1.3"
 
 # Resolve where the scripts live (follow symlinks to find real location)
 SOURCE="$0"
@@ -15,6 +15,18 @@ while [[ -L "$SOURCE" ]]; do
   [[ "$SOURCE" != /* ]] && SOURCE="$DIR/$SOURCE"
 done
 SCRIPT_DIR="$(cd "$(dirname "$SOURCE")" && pwd)"
+
+# Auto-detect GitHub repo from git remote
+if [[ -z "${ENG_REPO:-}" ]]; then
+  _remote_url=$(git remote get-url origin 2>/dev/null || true)
+  if [[ -n "$_remote_url" ]]; then
+    _remote_url="${_remote_url%.git}"
+    if [[ "$_remote_url" =~ github\.com[:/]([^/]+)/(.+)$ ]]; then
+      export ENG_OWNER="${BASH_REMATCH[1]}"
+      export ENG_REPO="${BASH_REMATCH[1]}/${BASH_REMATCH[2]}"
+    fi
+  fi
+fi
 
 # Map subcommand to script filename
 resolve_script() {
@@ -199,6 +211,6 @@ case "${1:-}" in
       exit 1
     }
 
-    exec bash "${SCRIPT_DIR}/${script}" "$@"
+    exec bash "${SCRIPT_DIR}/src/${script}" "$@"
     ;;
 esac
