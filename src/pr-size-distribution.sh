@@ -39,8 +39,14 @@ if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
   exit 0
 fi
 
-if [[ $# -lt 1 ]]; then
-  echo "Error: missing required argument owner/repo" >&2
+# Resolve repo: explicit arg (must contain /) > ENG_REPO env var
+if [[ -n "${1:-}" && "$1" == */* ]]; then
+  REPO="$1"
+  shift
+elif [[ -n "${ENG_REPO:-}" ]]; then
+  REPO="$ENG_REPO"
+else
+  echo "Error: missing required argument owner/repo (not in a GitHub repo)" >&2
   usage >&2
   exit 1
 fi
@@ -101,8 +107,7 @@ categorize_pr_size() {
     fi
 }
 
-REPO="$1"
-COUNT="${2:-50}"
+COUNT="${1:-50}"
 
 echo "Analyzing PR size distribution for $REPO (last $COUNT merged PRs) …"
 

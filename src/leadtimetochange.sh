@@ -48,8 +48,14 @@ for arg in "$@"; do
 done
 set -- "${args[@]+"${args[@]}"}"
 
-if [[ $# -lt 1 ]]; then
-  echo "Error: missing required argument owner/repo" >&2
+# Resolve repo: explicit arg (must contain /) > ENG_REPO env var
+if [[ -n "${1:-}" && "$1" == */* ]]; then
+  REPO="$1"
+  shift
+elif [[ -n "${ENG_REPO:-}" ]]; then
+  REPO="$ENG_REPO"
+else
+  echo "Error: missing required argument owner/repo (not in a GitHub repo)" >&2
   usage >&2
   exit 1
 fi
@@ -97,8 +103,7 @@ format_time() {
     fi
 }
 
-REPO="$1"
-DAYS="${2:-30}"
+DAYS="${1:-30}"
 
 # Calculate the cutoff timestamp (ISO 8601) for filtering merged PRs
 CUTOFF=$(get_cutoff_date "$DAYS")

@@ -41,8 +41,14 @@ if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
   exit 0
 fi
 
-if [[ $# -lt 1 ]]; then
-  echo "Error: missing required argument owner/repo" >&2
+# Resolve repo: explicit arg (must contain /) > ENG_REPO env var
+if [[ -n "${1:-}" && "$1" == */* ]]; then
+  REPO="$1"
+  shift
+elif [[ -n "${ENG_REPO:-}" ]]; then
+  REPO="$ENG_REPO"
+else
+  echo "Error: missing required argument owner/repo (not in a GitHub repo)" >&2
   usage >&2
   exit 1
 fi
@@ -60,9 +66,8 @@ else
     }
 fi
 
-REPO="$1"
-DAYS="${2:-30}"
-MIN_CHANGES="${3:-3}"
+DAYS="${1:-30}"
+MIN_CHANGES="${2:-3}"
 
 CUTOFF=$(get_cutoff_date "$DAYS")
 
