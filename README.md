@@ -1,5 +1,7 @@
 # engleader.tools
 
+> **Current version: v0.1.3**
+
 A collection of bash scripts for engineering leadership metrics and team health analysis. Built on the GitHub CLI (`gh`) and `jq`, these scripts give you quick, terminal-friendly insights into how your team ships code. Inspired by DORA metrics and practical eng management needs.
 
 ## Install
@@ -40,6 +42,19 @@ eng <command> [args...]
 eng --help
 eng lead-time --help
 ```
+
+### Auto-detection
+
+When you run a command inside a git repo with a GitHub remote, `eng` automatically detects the `owner/repo` — no need to type it:
+
+```bash
+cd ~/code/my-org/my-repo
+eng lead-time              # auto-detects my-org/my-repo
+eng lead-time other/repo   # explicit arg always wins
+eng stale-prs              # works for all commands
+```
+
+You can also set `ENG_REPO` and `ENG_OWNER` environment variables to override auto-detection.
 
 ### DORA Metrics
 
