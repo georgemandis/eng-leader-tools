@@ -2,8 +2,8 @@
 set -euo pipefail
 
 # Default values
-OWNER=""
-REPO=""
+OWNER="${ENG_OWNER:-}"
+REPO="${ENG_REPO:+${ENG_REPO##*/}}"
 LIMIT=100
 ONLY_UNAPPROVED=true
 
