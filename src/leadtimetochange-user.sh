@@ -96,16 +96,26 @@ format_time() {
     fi
 }
 
-# Check required arguments
-if [[ $# -lt 2 ]]; then
-    echo "Error: missing required arguments" >&2
-    usage >&2
-    exit 1
+# Resolve repo: explicit arg (must contain /) > ENG_REPO env var
+if [[ -n "${1:-}" && "$1" == */* ]]; then
+  REPO="$1"
+  shift
+elif [[ -n "${ENG_REPO:-}" ]]; then
+  REPO="$ENG_REPO"
+else
+  echo "Error: missing required argument owner/repo (not in a GitHub repo)" >&2
+  usage >&2
+  exit 1
 fi
 
-REPO="$1"
-USERNAME="$2"
-DAYS="${3:-30}"
+if [[ $# -lt 1 ]]; then
+  echo "Error: missing required argument username" >&2
+  usage >&2
+  exit 1
+fi
+
+USERNAME="$1"
+DAYS="${2:-30}"
 
 # Calculate the cutoff timestamp (ISO 8601) for filtering merged PRs
 CUTOFF=$(get_cutoff_date "$DAYS")

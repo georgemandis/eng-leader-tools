@@ -39,14 +39,25 @@ if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
   exit 0
 fi
 
-if [[ $# -lt 2 ]]; then
-  echo "Error: missing required arguments" >&2
+# Resolve repo: explicit arg (must contain /) > ENG_REPO env var
+if [[ -n "${1:-}" && "$1" == */* ]]; then
+  REPO="$1"
+  shift
+elif [[ -n "${ENG_REPO:-}" ]]; then
+  REPO="$ENG_REPO"
+else
+  echo "Error: missing required argument owner/repo (not in a GitHub repo)" >&2
   usage >&2
   exit 1
 fi
 
-REPO="$1"    # e.g. "octocat/hello-world"
-PR_NUM="$2"  # e.g. "42"
+if [[ $# -lt 1 ]]; then
+  echo "Error: missing required argument PR_NUMBER" >&2
+  usage >&2
+  exit 1
+fi
+
+PR_NUM="$1"
 
 # 1) Fetch PR details
 pr_details=$(gh api "repos/$REPO/pulls/$PR_NUM")
