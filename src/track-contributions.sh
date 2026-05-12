@@ -60,7 +60,7 @@ fi
 
 # Parse arguments
 USERNAME=""
-ORG=""
+ORG="${ENG_OWNER:-}"
 DAYS="30"
 
 for arg in "$@"; do
