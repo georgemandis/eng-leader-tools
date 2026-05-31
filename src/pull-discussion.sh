@@ -59,6 +59,16 @@ fi
 
 PR_NUM="$1"
 
+# Strip ESC (0x1B) from stdin to neutralize ANSI/OSC/CSI/DCS escape
+# sequences embedded in untrusted PR content (titles, bodies, filenames,
+# comment text). A PR title containing e.g. cursor-move or window-title
+# escapes would otherwise render in the user's terminal when this script
+# echoes it back. All escape sequences begin with ESC, so dropping that
+# single byte neutralizes the whole family.
+strip_ansi() {
+  tr -d '\033'
+}
+
 # 1) Fetch PR details
 pr_details=$(gh api "repos/$REPO/pulls/$PR_NUM")
 
@@ -77,7 +87,7 @@ changed_files=$(gh api \
 # 5) Format and combine all information
 echo "PR Details:"
 echo "──────────"
-echo "Title: $(echo "$pr_details" | jq -r '.title')"
+echo "Title: $(echo "$pr_details" | jq -r '.title' | strip_ansi)"
 echo "Author: $(echo "$pr_details" | jq -r '.user.login')"
 echo "Created: $(echo "$pr_details" | jq -r '.created_at')"
 echo "State: $(echo "$pr_details" | jq -r '.state')"
@@ -86,11 +96,11 @@ echo "Deletions: $(echo "$pr_details" | jq -r '.deletions')"
 echo
 echo "Description:"
 echo "────────────"
-echo "$(echo "$pr_details" | jq -r '.body')"
+echo "$pr_details" | jq -r '.body' | strip_ansi
 echo
 echo "Changed Files:"
 echo "─────────────"
-echo "$changed_files" | jq -r '.[] | "• \(.filename) (+\(.additions) -\(.deletions))"'
+echo "$changed_files" | jq -r '.[] | "• \(.filename) (+\(.additions) -\(.deletions))"' | strip_ansi
 echo
 echo "Discussion:"
 echo "───────────"
@@ -106,4 +116,4 @@ jq -s '.[0] + .[1] | sort_by(.created_at) | .[] |
     ) + "\n"
   else "" end) +
   "\n\(.body)\n\n───"' \
-  <(echo "$issue_comments") <(echo "$review_comments")
+  <(echo "$issue_comments") <(echo "$review_comments") | strip_ansi
