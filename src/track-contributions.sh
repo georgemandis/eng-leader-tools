@@ -47,8 +47,9 @@ fi
 
 VERBOSE=false
 
-# Detect OS and set appropriate date functions
-if [[ "$OSTYPE" == "darwin"* ]]; then
+# Detect date variant (BSD vs GNU) by capability probe — `$OSTYPE` is
+# unreliable when GNU coreutils shadow the system `date` on PATH.
+if date -v 0d >/dev/null 2>&1; then
     get_date_days_ago() {
         date -v-"$1"d +%Y-%m-%d
     }
