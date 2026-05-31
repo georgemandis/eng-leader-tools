@@ -16,14 +16,24 @@ while [[ -L "$SOURCE" ]]; do
 done
 SCRIPT_DIR="$(cd "$(dirname "$SOURCE")" && pwd)"
 
-# Auto-detect GitHub repo from git remote
+# Auto-detect GitHub repo from git remote.
+#
+# We validate the captured owner/repo against the GitHub-allowed charset
+# before exporting. A malicious upstream could set its origin to something
+# like `git@github.com:victim --owner=other-org/repo`, which would otherwise
+# be passed unquoted into `gh search` calls in downstream scripts and inject
+# extra flags into the user's gh queries.
 if [[ -z "${ENG_REPO:-}" ]]; then
   _remote_url=$(git remote get-url origin 2>/dev/null || true)
   if [[ -n "$_remote_url" ]]; then
     _remote_url="${_remote_url%.git}"
     if [[ "$_remote_url" =~ github\.com[:/]([^/]+)/(.+)$ ]]; then
-      export ENG_OWNER="${BASH_REMATCH[1]}"
-      export ENG_REPO="${BASH_REMATCH[1]}/${BASH_REMATCH[2]}"
+      _owner="${BASH_REMATCH[1]}"
+      _repo_name="${BASH_REMATCH[2]}"
+      if [[ "$_owner" =~ ^[A-Za-z0-9._-]+$ && "$_repo_name" =~ ^[A-Za-z0-9._-]+$ ]]; then
+        export ENG_OWNER="$_owner"
+        export ENG_REPO="$_owner/$_repo_name"
+      fi
     fi
   fi
 fi
