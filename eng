@@ -28,6 +28,32 @@ if [[ -z "${ENG_REPO:-}" ]]; then
   fi
 fi
 
+# Strip --team flag from args (must happen before dispatch so subscripts don't see it)
+_team_slug=""
+_eng_args=()
+_skip_next=false
+for _arg in "$@"; do
+  if [[ "$_skip_next" == "true" ]]; then
+    _team_slug="$_arg"
+    _skip_next=false
+  elif [[ "$_arg" == "--team" ]]; then
+    _skip_next=true
+  else
+    _eng_args+=("$_arg")
+  fi
+done
+
+# Error if --team was passed without a value
+if [[ "$_skip_next" == "true" ]]; then
+  echo "Error: --team requires a team slug argument" >&2
+  exit 1
+fi
+
+set -- "${_eng_args[@]+"${_eng_args[@]}"}"
+
+# Use flag value, fall back to env var
+_team_slug="${_team_slug:-${ENG_TEAM:-}}"
+
 # Map subcommand to script filename
 resolve_script() {
   case "$1" in
@@ -89,6 +115,7 @@ Options:
   -h, --help             Show this help
   -v, --version          Show version
   --completions SHELL    Output shell completions (bash, zsh, fish)
+  --team SLUG            Filter results to members of a GitHub Team
 
 All commands support --help for detailed usage.
 
@@ -107,9 +134,9 @@ generate_completions() {
 _eng_completions() {
   local cur="\${COMP_WORDS[COMP_CWORD]}"
   if [[ \$COMP_CWORD -eq 1 ]]; then
-    COMPREPLY=(\$(compgen -W "$cmds --help --version --completions" -- "\$cur"))
+    COMPREPLY=(\$(compgen -W "$cmds --help --version --completions --team" -- "\$cur"))
   elif [[ \$COMP_CWORD -ge 2 ]]; then
-    COMPREPLY=(\$(compgen -W "--help --csv" -- "\$cur"))
+    COMPREPLY=(\$(compgen -W "--help --csv --team" -- "\$cur"))
   fi
 }
 complete -F _eng_completions eng
@@ -144,7 +171,7 @@ _eng() {
   if (( CURRENT == 2 )); then
     _describe 'command' commands
   else
-    _arguments '--help[Show help]' '--csv[Output as CSV]' '*:argument:_files'
+    _arguments '--help[Show help]' '--csv[Output as CSV]' '--team[Filter by GitHub Team]' '*:argument:_files'
   fi
 }
 
@@ -177,6 +204,7 @@ complete -c eng -n "not __fish_seen_subcommand_from $commands" -a pull-discussio
 complete -c eng -n "not __fish_seen_subcommand_from $commands" -a analyze-discussion -d "LLM discussion summary"
 complete -c eng -n "__fish_seen_subcommand_from $commands" -l help -d "Show help"
 complete -c eng -n "__fish_seen_subcommand_from $commands" -l csv -d "Output as CSV"
+complete -c eng -l team -d "Filter by GitHub Team"
 FISHEOF
       ;;
     *)
@@ -210,6 +238,31 @@ case "${1:-}" in
       echo "Run 'eng --help' for available commands." >&2
       exit 1
     }
+
+    # Resolve team members (only when dispatching a real command)
+    if [[ -n "$_team_slug" ]]; then
+      if [[ -z "${ENG_OWNER:-}" ]]; then
+        echo "Error: --team requires an org context (run from a GitHub repo or set ENG_OWNER)" >&2
+        exit 1
+      fi
+
+      export ENG_TEAM="$_team_slug"
+
+      # Check if ENG_TEAM_MEMBERS is already set (allows users to skip API call)
+      if [[ -z "${ENG_TEAM_MEMBERS:-}" ]]; then
+        ENG_TEAM_MEMBERS=$(gh api "/orgs/${ENG_OWNER}/teams/${_team_slug}/members" --paginate --jq '.[].login' 2>/dev/null | paste -sd, -) || {
+          echo "Error: could not fetch members for team '${_team_slug}' in org '${ENG_OWNER}'" >&2
+          exit 1
+        }
+
+        if [[ -z "$ENG_TEAM_MEMBERS" ]]; then
+          echo "Error: team '${_team_slug}' has no members or does not exist in org '${ENG_OWNER}'" >&2
+          exit 1
+        fi
+      fi
+
+      export ENG_TEAM_MEMBERS
+    fi
 
     exec bash "${SCRIPT_DIR}/src/${script}" "$@"
     ;;
