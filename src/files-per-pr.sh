@@ -73,7 +73,7 @@ if [[ -n "${ENG_TEAM_MEMBERS:-}" ]]; then
       --json number,title,mergedAt,author,url 2>/dev/null || echo "[]")
     _all_prs=$(jq -s 'add' <(echo "$_all_prs") <(echo "$_member_prs"))
   done
-  PR_JSON="$_all_prs"
+  PR_JSON=$(echo "$_all_prs" | jq --argjson n "$COUNT" 'unique_by(.number) | sort_by(.mergedAt) | reverse | .[:$n]')
 else
   PR_JSON=$(gh pr list \
     --repo "$REPO" \

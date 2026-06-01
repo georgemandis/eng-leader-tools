@@ -72,6 +72,7 @@ if [[ -n "${ENG_TEAM_MEMBERS:-}" ]]; then
   [[ -n "${ENG_TEAM:-}" ]] && _team_label=" (team: $ENG_TEAM)"
 
   echo "$_all_prs" | jq -r --argjson only_unapproved "$ONLY_UNAPPROVED" --arg team_label "$_team_label" '
+    unique_by(.number) |
     map(select(.changedFiles <= 2 and .changedFiles >= 1 and .isDraft == false)) |
     if $only_unapproved then
       map(select(.reviewDecision != "APPROVED"))

@@ -60,11 +60,30 @@ else
 fi
 
 # Fetch recent merged PRs with author info
-PR_JSON=$(gh pr list \
-  --repo "$REPO" \
-  --state merged \
-  --limit "$COUNT" \
-  --json number,author)
+if [[ -n "${ENG_TEAM_MEMBERS:-}" ]]; then
+  IFS=',' read -ra _members <<< "$ENG_TEAM_MEMBERS"
+  _member_count=${#_members[@]}
+  _per_member_limit=$(( COUNT / _member_count ))
+  (( _per_member_limit < 5 )) && _per_member_limit=5
+
+  _all_prs="[]"
+  for _member in "${_members[@]}"; do
+    _member_prs=$(gh pr list \
+      --repo "$REPO" \
+      --state merged \
+      --limit "$_per_member_limit" \
+      --author "$_member" \
+      --json number,author 2>/dev/null || echo "[]")
+    _all_prs=$(jq -s 'add' <(echo "$_all_prs") <(echo "$_member_prs"))
+  done
+  PR_JSON=$(echo "$_all_prs" | jq --argjson n "$COUNT" 'unique_by(.number) | sort_by(.number) | reverse | .[:$n]')
+else
+  PR_JSON=$(gh pr list \
+    --repo "$REPO" \
+    --state merged \
+    --limit "$COUNT" \
+    --json number,author)
+fi
 
 if [[ -z "$PR_JSON" ]] || [[ "$PR_JSON" == "[]" ]]; then
   echo "No merged PRs found."

@@ -16,20 +16,9 @@ while [[ -L "$SOURCE" ]]; do
 done
 SCRIPT_DIR="$(cd "$(dirname "$SOURCE")" && pwd)"
 
-# Auto-detect GitHub repo from git remote
-if [[ -z "${ENG_REPO:-}" ]]; then
-  _remote_url=$(git remote get-url origin 2>/dev/null || true)
-  if [[ -n "$_remote_url" ]]; then
-    _remote_url="${_remote_url%.git}"
-    if [[ "$_remote_url" =~ github\.com[:/]([^/]+)/(.+)$ ]]; then
-      export ENG_OWNER="${BASH_REMATCH[1]}"
-      export ENG_REPO="${BASH_REMATCH[1]}/${BASH_REMATCH[2]}"
-    fi
-  fi
-fi
-
-# Strip --team flag from args (must happen before dispatch so subscripts don't see it)
+# Strip --team and --dry-run flags from args (must happen before dispatch so subscripts don't see them)
 _team_slug=""
+_dry_run=false
 _eng_args=()
 _skip_next=false
 for _arg in "$@"; do
@@ -40,6 +29,8 @@ for _arg in "$@"; do
     _skip_next=true
   elif [[ "$_arg" == --team=* ]]; then
     _team_slug="${_arg#--team=}"
+  elif [[ "$_arg" == "--dry-run" ]]; then
+    _dry_run=true
   else
     _eng_args+=("$_arg")
   fi
@@ -55,6 +46,28 @@ set -- "${_eng_args[@]+"${_eng_args[@]}"}"
 
 # Use flag value, fall back to env var
 _team_slug="${_team_slug:-${ENG_TEAM:-}}"
+
+# Infer ENG_OWNER and ENG_REPO from positional owner/repo arg if present
+# (skip the first arg which is the subcommand)
+for _arg in "${_eng_args[@]:1}"; do
+  if [[ "$_arg" == */* && "$_arg" != -* ]]; then
+    export ENG_OWNER="${_arg%%/*}"
+    export ENG_REPO="$_arg"
+    break
+  fi
+done
+
+# Auto-detect GitHub repo from git remote (only if not already set)
+if [[ -z "${ENG_REPO:-}" ]]; then
+  _remote_url=$(git remote get-url origin 2>/dev/null || true)
+  if [[ -n "$_remote_url" ]]; then
+    _remote_url="${_remote_url%.git}"
+    if [[ "$_remote_url" =~ github\.com[:/]([^/]+)/(.+)$ ]]; then
+      export ENG_OWNER="${BASH_REMATCH[1]}"
+      export ENG_REPO="${BASH_REMATCH[1]}/${BASH_REMATCH[2]}"
+    fi
+  fi
+fi
 
 # Map subcommand to script filename
 resolve_script() {
@@ -118,6 +131,7 @@ Options:
   -v, --version          Show version
   --completions SHELL    Output shell completions (bash, zsh, fish)
   --team SLUG            Filter results to members of a GitHub Team
+  --dry-run              Show resolved config and command without running it
 
 All commands support --help for detailed usage.
 
@@ -271,6 +285,23 @@ case "${1:-}" in
       fi
 
       export ENG_TEAM_MEMBERS
+    fi
+
+    if [[ "$_dry_run" == "true" ]]; then
+      echo "eng dry-run"
+      echo "─────────────────"
+      echo "Command:          $cmd"
+      echo "Script:           src/${script}"
+      echo "Args:             $*"
+      echo "ENG_REPO:         ${ENG_REPO:-<not set>}"
+      echo "ENG_OWNER:        ${ENG_OWNER:-<not set>}"
+      if [[ -n "${ENG_TEAM:-}" ]]; then
+        echo "ENG_TEAM:         ${ENG_TEAM}"
+        echo "ENG_TEAM_MEMBERS: ${ENG_TEAM_MEMBERS:-<not set>}"
+      else
+        echo "ENG_TEAM:         <not set>"
+      fi
+      exit 0
     fi
 
     exec bash "${SCRIPT_DIR}/src/${script}" "$@"
