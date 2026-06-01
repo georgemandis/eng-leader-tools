@@ -108,14 +108,43 @@ DAYS="${1:-30}"
 # Calculate the cutoff timestamp (ISO 8601) for filtering merged PRs
 CUTOFF=$(get_cutoff_date "$DAYS")
 
-[[ "$CSV" == "false" ]] && echo "Fetching PRs merged since $CUTOFF in $REPO …"
+if [[ "$CSV" == "false" ]]; then
+  if [[ -n "${ENG_TEAM:-}" ]]; then
+    echo "Fetching PRs merged since $CUTOFF in $REPO (team: $ENG_TEAM) …"
+  else
+    echo "Fetching PRs merged since $CUTOFF in $REPO …"
+  fi
+fi
 # Fetch up to 1000 merged PRs (adjust --limit if needed), output JSON
-PR_JSON=$(gh pr list \
-  --repo "$REPO" \
-  --state merged \
-  --limit 1000 \
-  --json number,createdAt,mergedAt,author \
-  --jq ".[] | select(.mergedAt >= \"$CUTOFF\")")
+if [[ -n "${ENG_TEAM_MEMBERS:-}" ]]; then
+  # Per-member queries: divide limit across team members
+  IFS=',' read -ra _members <<< "$ENG_TEAM_MEMBERS"
+  _member_count=${#_members[@]}
+  _per_member_limit=$(( 1000 / _member_count ))
+  (( _per_member_limit < 10 )) && _per_member_limit=10
+
+  PR_JSON=""
+  for _member in "${_members[@]}"; do
+    _member_prs=$(gh pr list \
+      --repo "$REPO" \
+      --state merged \
+      --limit "$_per_member_limit" \
+      --author "$_member" \
+      --json number,createdAt,mergedAt,author \
+      --jq ".[] | select(.mergedAt >= \"$CUTOFF\")" 2>/dev/null || true)
+    if [[ -n "$_member_prs" ]]; then
+      PR_JSON="${PR_JSON}${PR_JSON:+
+}${_member_prs}"
+    fi
+  done
+else
+  PR_JSON=$(gh pr list \
+    --repo "$REPO" \
+    --state merged \
+    --limit 1000 \
+    --json number,createdAt,mergedAt,author \
+    --jq ".[] | select(.mergedAt >= \"$CUTOFF\")")
+fi
 
 if [[ -z "$PR_JSON" ]]; then
   echo "No PRs merged in the last $DAYS days." >&2
