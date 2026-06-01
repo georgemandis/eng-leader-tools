@@ -65,7 +65,22 @@ fi
 
 COUNT="${1:-50}"
 
-[[ "$CSV" == "false" ]] && echo "Analyzing review load for $REPO (last $COUNT merged PRs) …"
+if [[ "$CSV" == "false" ]]; then
+  if [[ -n "${ENG_TEAM:-}" ]]; then
+    echo "Analyzing review load for $REPO (last $COUNT merged PRs, team: $ENG_TEAM) …"
+  else
+    echo "Analyzing review load for $REPO (last $COUNT merged PRs) …"
+  fi
+fi
+
+# Build team member filter for grep
+_team_filter=""
+if [[ -n "${ENG_TEAM_MEMBERS:-}" ]]; then
+  IFS=',' read -ra _members <<< "$ENG_TEAM_MEMBERS"
+  for _m in "${_members[@]}"; do
+    _team_filter="${_team_filter}${_team_filter:+|}${_m}"
+  done
+fi
 
 # Fetch recent merged PRs
 PR_JSON=$(gh pr list \
@@ -93,14 +108,22 @@ echo "$PR_JSON" | jq -r '.[] | @base64' | while IFS= read -r pr_b64; do
   num=$(echo "$pr" | jq -r '.number')
   author=$(echo "$pr" | jq -r '.author.login')
 
-  echo "$author" >> "$temp_authors"
+  if [[ -z "$_team_filter" ]] || echo "$author" | grep -qE "^(${_team_filter})$"; then
+    echo "$author" >> "$temp_authors"
+  fi
 
   # Get reviews for this PR
   reviews=$(gh api "repos/$REPO/pulls/$num/reviews" --paginate 2>/dev/null || echo "[]")
 
   # Extract unique reviewers (excluding the PR author) and their decisions
-  echo "$reviews" | jq -r --arg author "$author" \
-    '.[] | select(.user.login != $author) | "\(.user.login) \(.state)"' >> "$temp_reviews"
+  if [[ -n "$_team_filter" ]]; then
+    echo "$reviews" | jq -r --arg author "$author" \
+      '.[] | select(.user.login != $author) | "\(.user.login) \(.state)"' \
+      | grep -E "^(${_team_filter}) " >> "$temp_reviews" || true
+  else
+    echo "$reviews" | jq -r --arg author "$author" \
+      '.[] | select(.user.login != $author) | "\(.user.login) \(.state)"' >> "$temp_reviews"
+  fi
 
   total_prs=$((total_prs + 1))
 done
