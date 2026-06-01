@@ -53,7 +53,11 @@ fi
 
 COUNT="${1:-50}"
 
-echo "Analyzing file change patterns for contributors in $REPO (last $COUNT PRs) …"
+if [[ -n "${ENG_TEAM:-}" ]]; then
+  echo "Analyzing file change patterns for contributors in $REPO (last $COUNT PRs, team: $ENG_TEAM) …"
+else
+  echo "Analyzing file change patterns for contributors in $REPO (last $COUNT PRs) …"
+fi
 
 # Fetch recent merged PRs with author info
 PR_JSON=$(gh pr list \
@@ -77,7 +81,14 @@ echo "$PR_JSON" | jq -r '.[] | @base64' | while IFS= read -r pr_b64; do
   
   num=$(echo "$pr" | jq -r '.number')
   author=$(echo "$pr" | jq -r '.author.login')
-  
+
+  # Skip non-team members if team filter is active
+  if [[ -n "${ENG_TEAM_MEMBERS:-}" ]]; then
+    if ! echo ",${ENG_TEAM_MEMBERS}," | grep -q ",${author},"; then
+      continue
+    fi
+  fi
+
   # Get file count for this PR
   files_count=$(gh api "repos/$REPO/pulls/$num/files" --paginate | jq 'length')
   
