@@ -50,14 +50,37 @@ fi
 
 COUNT="${1:-20}"
 
-echo "Fetching last $COUNT merged PRs from $REPO …"
+if [[ -n "${ENG_TEAM:-}" ]]; then
+  echo "Fetching last $COUNT merged PRs from $REPO (team: $ENG_TEAM) …"
+else
+  echo "Fetching last $COUNT merged PRs from $REPO …"
+fi
 
 # Fetch recent merged PRs with basic info
-PR_JSON=$(gh pr list \
-  --repo "$REPO" \
-  --state merged \
-  --limit "$COUNT" \
-  --json number,title,mergedAt,author,url)
+if [[ -n "${ENG_TEAM_MEMBERS:-}" ]]; then
+  IFS=',' read -ra _members <<< "$ENG_TEAM_MEMBERS"
+  _member_count=${#_members[@]}
+  _per_member_limit=$(( COUNT / _member_count ))
+  (( _per_member_limit < 5 )) && _per_member_limit=5
+
+  _all_prs="[]"
+  for _member in "${_members[@]}"; do
+    _member_prs=$(gh pr list \
+      --repo "$REPO" \
+      --state merged \
+      --limit "$_per_member_limit" \
+      --author "$_member" \
+      --json number,title,mergedAt,author,url 2>/dev/null || echo "[]")
+    _all_prs=$(jq -s 'add' <(echo "$_all_prs") <(echo "$_member_prs"))
+  done
+  PR_JSON="$_all_prs"
+else
+  PR_JSON=$(gh pr list \
+    --repo "$REPO" \
+    --state merged \
+    --limit "$COUNT" \
+    --json number,title,mergedAt,author,url)
+fi
 
 if [[ -z "$PR_JSON" ]] || [[ "$PR_JSON" == "[]" ]]; then
   echo "No merged PRs found."
