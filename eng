@@ -38,6 +38,8 @@ for _arg in "$@"; do
     _skip_next=false
   elif [[ "$_arg" == "--team" ]]; then
     _skip_next=true
+  elif [[ "$_arg" == --team=* ]]; then
+    _team_slug="${_arg#--team=}"
   else
     _eng_args+=("$_arg")
   fi
@@ -247,6 +249,13 @@ case "${1:-}" in
       fi
 
       export ENG_TEAM="$_team_slug"
+
+      # Verify the owner is an org, not a user account
+      _owner_type=$(gh api "/users/${ENG_OWNER}" --jq '.type' 2>/dev/null || true)
+      if [[ "$_owner_type" == "User" ]]; then
+        echo "Error: --team requires a GitHub organization. '${ENG_OWNER}' appears to be a user account." >&2
+        exit 1
+      fi
 
       # Check if ENG_TEAM_MEMBERS is already set (allows users to skip API call)
       if [[ -z "${ENG_TEAM_MEMBERS:-}" ]]; then
