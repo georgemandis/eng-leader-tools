@@ -78,13 +78,38 @@ fi
 LIMIT="${1:-100}"
 NOW=$(date +%s)
 
-[[ "$CSV" == "false" ]] && echo "Fetching open PRs for $REPO …"
+if [[ "$CSV" == "false" ]]; then
+  if [[ -n "${ENG_TEAM:-}" ]]; then
+    echo "Fetching open PRs for $REPO (team: $ENG_TEAM) …"
+  else
+    echo "Fetching open PRs for $REPO …"
+  fi
+fi
 
-PR_JSON=$(gh pr list \
-  --repo "$REPO" \
-  --state open \
-  --limit "$LIMIT" \
-  --json number,title,author,createdAt,updatedAt,isDraft,url)
+if [[ -n "${ENG_TEAM_MEMBERS:-}" ]]; then
+  IFS=',' read -ra _members <<< "$ENG_TEAM_MEMBERS"
+  _member_count=${#_members[@]}
+  _per_member_limit=$(( LIMIT / _member_count ))
+  (( _per_member_limit < 10 )) && _per_member_limit=10
+
+  _all_prs="[]"
+  for _member in "${_members[@]}"; do
+    _member_prs=$(gh pr list \
+      --repo "$REPO" \
+      --state open \
+      --limit "$_per_member_limit" \
+      --author "$_member" \
+      --json number,title,author,createdAt,updatedAt,isDraft,url 2>/dev/null || echo "[]")
+    _all_prs=$(jq -s 'add' <(echo "$_all_prs") <(echo "$_member_prs"))
+  done
+  PR_JSON="$_all_prs"
+else
+  PR_JSON=$(gh pr list \
+    --repo "$REPO" \
+    --state open \
+    --limit "$LIMIT" \
+    --json number,title,author,createdAt,updatedAt,isDraft,url)
+fi
 
 if [[ -z "$PR_JSON" ]] || [[ "$PR_JSON" == "[]" ]]; then
   echo "No open PRs found."
