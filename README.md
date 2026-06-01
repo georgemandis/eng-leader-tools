@@ -56,6 +56,29 @@ eng stale-prs              # works for all commands
 
 You can also set `ENG_REPO` and `ENG_OWNER` environment variables to override auto-detection.
 
+### Team Filtering
+
+Filter any supported command to a specific GitHub Team's members:
+
+```bash
+eng review-load my-org/my-repo --team frontend-team
+eng stale-prs my-org/my-repo --team platform-team
+```
+
+Set `ENG_TEAM` to apply the filter to all commands:
+
+```bash
+export ENG_TEAM=frontend-team
+eng lead-time my-org/my-repo    # filtered to frontend-team
+eng review-load my-org/my-repo  # filtered to frontend-team
+```
+
+**Supported commands:** `lead-time`, `review-time`, `pr-size`, `files-per-pr`, `files-per-pr-live`, `stale-prs`, `quick-reviews`, `review-load`, `contributor-patterns`
+
+**How it works:** For most commands, the tool makes per-member API queries to get complete data for each team member. For `review-load` and `contributor-patterns`, data is fetched in bulk and filtered client-side.
+
+**Requirements:** The `--team` flag requires a GitHub organization (not a personal account) and permissions to view team membership.
+
 ### DORA Metrics
 
 | Command | Description |
