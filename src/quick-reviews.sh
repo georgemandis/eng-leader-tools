@@ -51,28 +51,62 @@ if [[ -z "$OWNER" || -z "$REPO" ]]; then
 fi
 
 # Get PRs and filter by changed files count (1 or 2 files) and approval status
-gh pr list \
-  --repo "$OWNER/$REPO" \
-  --state open \
-  --limit "$LIMIT" \
-  --json number,title,url,author,changedFiles,updatedAt,reviewDecision,isDraft \
-  | jq -r --argjson only_unapproved "$ONLY_UNAPPROVED" '
-    # Filter to 1-2 files, exclude drafts, and optionally filter by approval status
+if [[ -n "${ENG_TEAM_MEMBERS:-}" ]]; then
+  IFS=',' read -ra _members <<< "$ENG_TEAM_MEMBERS"
+  _member_count=${#_members[@]}
+  _per_member_limit=$(( LIMIT / _member_count ))
+  (( _per_member_limit < 10 )) && _per_member_limit=10
+
+  _all_prs="[]"
+  for _member in "${_members[@]}"; do
+    _member_prs=$(gh pr list \
+      --repo "$OWNER/$REPO" \
+      --state open \
+      --limit "$_per_member_limit" \
+      --author "$_member" \
+      --json number,title,url,author,changedFiles,updatedAt,reviewDecision,isDraft 2>/dev/null || echo "[]")
+    _all_prs=$(jq -s 'add' <(echo "$_all_prs") <(echo "$_member_prs"))
+  done
+
+  _team_label=""
+  [[ -n "${ENG_TEAM:-}" ]] && _team_label=" (team: $ENG_TEAM)"
+
+  echo "$_all_prs" | jq -r --argjson only_unapproved "$ONLY_UNAPPROVED" --arg team_label "$_team_label" '
     map(select(.changedFiles <= 2 and .changedFiles >= 1 and .isDraft == false)) |
     if $only_unapproved then
       map(select(.reviewDecision != "APPROVED"))
     else
       .
     end |
-    # Sort by updatedAt descending (newest first)
     sort_by(.updatedAt) | reverse |
     if length == 0 then
-      if $only_unapproved then
-        "No unapproved PRs found with 1-2 file changes in \($owner)/\($repo)"
-      else
-        "No PRs found with 1-2 file changes in \($owner)/\($repo)"
-      end
+      "No matching PRs found\($team_label)"
     else
       .[] | "\(.updatedAt | split("T")[0]) • \(.title) • \(.url)"
     end
-  ' --arg owner "$OWNER" --arg repo "$REPO"
+  '
+else
+  gh pr list \
+    --repo "$OWNER/$REPO" \
+    --state open \
+    --limit "$LIMIT" \
+    --json number,title,url,author,changedFiles,updatedAt,reviewDecision,isDraft \
+    | jq -r --argjson only_unapproved "$ONLY_UNAPPROVED" '
+      map(select(.changedFiles <= 2 and .changedFiles >= 1 and .isDraft == false)) |
+      if $only_unapproved then
+        map(select(.reviewDecision != "APPROVED"))
+      else
+        .
+      end |
+      sort_by(.updatedAt) | reverse |
+      if length == 0 then
+        if $only_unapproved then
+          "No unapproved PRs found with 1-2 file changes"
+        else
+          "No PRs found with 1-2 file changes"
+        end
+      else
+        .[] | "\(.updatedAt | split("T")[0]) • \(.title) • \(.url)"
+      end
+    '
+fi
