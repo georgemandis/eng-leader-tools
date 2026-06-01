@@ -1,6 +1,6 @@
 # engleader.tools
 
-> **Current version: v0.1.3**
+> **Current version: v0.2.0**
 
 A collection of bash scripts for engineering leadership metrics and team health analysis. Built on the GitHub CLI (`gh`) and `jq`, these scripts give you quick, terminal-friendly insights into how your team ships code. Inspired by DORA metrics and practical eng management needs.
 
@@ -63,6 +63,7 @@ Filter any supported command to a specific GitHub Team's members:
 ```bash
 eng review-load my-org/my-repo --team frontend-team
 eng stale-prs my-org/my-repo --team platform-team
+eng pr-size my-org/my-repo --team=frontend-team 20    # --team=value syntax also works
 ```
 
 Set `ENG_TEAM` to apply the filter to all commands:
@@ -75,9 +76,19 @@ eng review-load my-org/my-repo  # filtered to frontend-team
 
 **Supported commands:** `lead-time`, `review-time`, `pr-size`, `files-per-pr`, `files-per-pr-live`, `stale-prs`, `quick-reviews`, `review-load`, `contributor-patterns`
 
-**How it works:** For most commands, the tool makes per-member API queries to get complete data for each team member. For `review-load` and `contributor-patterns`, data is fetched in bulk and filtered client-side.
+**How it works:** The tool resolves the team's member list via the GitHub API, then makes per-member queries to ensure complete coverage. Results are deduplicated and sorted before display.
 
 **Requirements:** The `--team` flag requires a GitHub organization (not a personal account) and permissions to view team membership.
+
+### Dry Run
+
+Use `--dry-run` to see the resolved configuration without running the actual command:
+
+```bash
+eng pr-size my-org/my-repo --team frontend-team --dry-run
+```
+
+This shows the resolved `ENG_REPO`, `ENG_OWNER`, `ENG_TEAM`, and `ENG_TEAM_MEMBERS` — useful for debugging team resolution or verifying auto-detection.
 
 ### DORA Metrics
 
