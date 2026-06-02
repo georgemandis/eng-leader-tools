@@ -51,40 +51,18 @@ else
   exit 1
 fi
 
-# Detect OS and set appropriate date functions
-if [[ "$OSTYPE" == "darwin"* ]]; then
-    parse_timestamp() {
-        local timestamp=$1
-        date -j -f "%Y-%m-%dT%H:%M:%SZ" "$timestamp" +%s
-    }
-    
-    format_time() {
-        local seconds=$1
-        local hours=$(( seconds / 3600 ))
-        if (( hours >= 24 )); then
-            local days=$(( hours / 24 ))
-            printf "%dd" "$days"
-        else
-            printf "%dh" "$hours"
-        fi
-    }
-else
-    parse_timestamp() {
-        local timestamp=$1
-        date -d "$timestamp" +%s
-    }
-    
-    format_time() {
-        local seconds=$1
-        local hours=$(( seconds / 3600 ))
-        if (( hours >= 24 )); then
-            local days=$(( hours / 24 ))
-            printf "%dd" "$days"
-        else
-            printf "%dh" "$hours"
-        fi
-    }
-fi
+source "$(dirname "${BASH_SOURCE[0]}")/_dates.sh"
+
+format_time() {
+    local seconds=$1
+    local hours=$(( seconds / 3600 ))
+    if (( hours >= 24 )); then
+        local days=$(( hours / 24 ))
+        printf "%dd" "$days"
+    else
+        printf "%dh" "$hours"
+    fi
+}
 
 # Function to categorize PR size
 categorize_pr_size() {

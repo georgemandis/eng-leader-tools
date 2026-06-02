@@ -49,40 +49,7 @@ else
   exit 1
 fi
 
-# Detect OS and set appropriate date functions
-if [[ "$OSTYPE" == "darwin"* ]]; then
-    # macOS date functions
-    get_cutoff_date() {
-        local days=$1
-        date -u -v-"$days"d +"%Y-%m-%dT%H:%M:%SZ"
-    }
-    
-    parse_timestamp() {
-        local timestamp=$1
-        date -j -f "%Y-%m-%dT%H:%M:%SZ" "$timestamp" +%s
-    }
-    
-    format_date() {
-        local timestamp=$1
-        date -j -f "%Y-%m-%dT%H:%M:%SZ" "$timestamp" +"%Y-%m-%d"
-    }
-else
-    # Linux date functions
-    get_cutoff_date() {
-        local days=$1
-        date -u -d "$days days ago" +"%Y-%m-%dT%H:%M:%SZ"
-    }
-    
-    parse_timestamp() {
-        local timestamp=$1
-        date -d "$timestamp" +%s
-    }
-    
-    format_date() {
-        local timestamp=$1
-        date -d "$timestamp" +"%Y-%m-%d"
-    }
-fi
+source "$(dirname "${BASH_SOURCE[0]}")/_dates.sh"
 
 # Function to format time in human-readable units
 format_time_diff() {

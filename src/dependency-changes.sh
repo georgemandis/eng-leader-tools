@@ -51,28 +51,7 @@ else
   exit 1
 fi
 
-# Detect OS and set appropriate date functions
-if [[ "$OSTYPE" == "darwin"* ]]; then
-    get_cutoff_date() {
-        local days=$1
-        date -u -v-"$days"d +"%Y-%m-%dT%H:%M:%SZ"
-    }
-    
-    format_date() {
-        local timestamp=$1
-        date -j -f "%Y-%m-%dT%H:%M:%SZ" "$timestamp" +"%Y-%m-%d"
-    }
-else
-    get_cutoff_date() {
-        local days=$1
-        date -u -d "$days days ago" +"%Y-%m-%dT%H:%M:%SZ"
-    }
-    
-    format_date() {
-        local timestamp=$1
-        date -d "$timestamp" +"%Y-%m-%d"
-    }
-fi
+source "$(dirname "${BASH_SOURCE[0]}")/_dates.sh"
 
 DAYS="${1:-90}"
 
