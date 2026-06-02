@@ -39,17 +39,10 @@ if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
   exit 0
 fi
 
-# Resolve repo: explicit arg (must contain /) > ENG_REPO env var
-if [[ -n "${1:-}" && "$1" == */* ]]; then
-  REPO="$1"
-  shift
-elif [[ -n "${ENG_REPO:-}" ]]; then
-  REPO="$ENG_REPO"
-else
-  echo "Error: missing required argument owner/repo (not in a GitHub repo)" >&2
-  usage >&2
-  exit 1
-fi
+source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
+
+resolve_repo "${1:-}" || { usage >&2; exit 1; }
+[[ "$_REPO_FROM_ARG" == true ]] && shift
 
 if [[ $# -lt 1 ]]; then
   echo "Error: missing required argument PR_NUMBER" >&2
@@ -58,6 +51,12 @@ if [[ $# -lt 1 ]]; then
 fi
 
 PR_NUM="$1"
+
+# Strip ESC (0x1B) to neutralize ANSI escape sequences in untrusted
+# PR content (titles, bodies, filenames, comments).
+strip_ansi() {
+  tr -d '\033'
+}
 
 # 1) Fetch PR details
 pr_details=$(gh api "repos/$REPO/pulls/$PR_NUM")
@@ -77,7 +76,7 @@ changed_files=$(gh api \
 # 5) Format and combine all information
 echo "PR Details:"
 echo "──────────"
-echo "Title: $(echo "$pr_details" | jq -r '.title')"
+echo "Title: $(echo "$pr_details" | jq -r '.title' | strip_ansi)"
 echo "Author: $(echo "$pr_details" | jq -r '.user.login')"
 echo "Created: $(echo "$pr_details" | jq -r '.created_at')"
 echo "State: $(echo "$pr_details" | jq -r '.state')"
@@ -86,11 +85,11 @@ echo "Deletions: $(echo "$pr_details" | jq -r '.deletions')"
 echo
 echo "Description:"
 echo "────────────"
-echo "$(echo "$pr_details" | jq -r '.body')"
+echo "$pr_details" | jq -r '.body' | strip_ansi
 echo
 echo "Changed Files:"
 echo "─────────────"
-echo "$changed_files" | jq -r '.[] | "• \(.filename) (+\(.additions) -\(.deletions))"'
+echo "$changed_files" | jq -r '.[] | "• \(.filename) (+\(.additions) -\(.deletions))"' | strip_ansi
 echo
 echo "Discussion:"
 echo "───────────"
@@ -106,4 +105,4 @@ jq -s '.[0] + .[1] | sort_by(.created_at) | .[] |
     ) + "\n"
   else "" end) +
   "\n\(.body)\n\n───"' \
-  <(echo "$issue_comments") <(echo "$review_comments")
+  <(echo "$issue_comments") <(echo "$review_comments") | strip_ansi

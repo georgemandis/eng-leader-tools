@@ -47,16 +47,7 @@ fi
 
 VERBOSE=false
 
-# Detect OS and set appropriate date functions
-if [[ "$OSTYPE" == "darwin"* ]]; then
-    get_date_days_ago() {
-        date -v-"$1"d +%Y-%m-%d
-    }
-else
-    get_date_days_ago() {
-        date -d "$1 days ago" +%Y-%m-%d
-    }
-fi
+source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 
 # Parse arguments
 USERNAME=""

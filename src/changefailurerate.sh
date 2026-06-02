@@ -24,45 +24,37 @@ Arguments:
   owner/repo   GitHub repo (e.g. "octocat/hello-world")
   days         Lookback window in days (default: 30)
 
+Options:
+  --csv        Output failed PRs as CSV instead of narrative summary
+
 Examples:
   $(basename "$0") my-org/my-repo
   $(basename "$0") my-org/my-repo 90
+  $(basename "$0") my-org/my-repo 30 --csv > failures.csv
 
 Requires: gh (authenticated), jq
 EOF
 }
 
-if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
-  usage
-  exit 0
-fi
+CSV=false
+for arg in "$@"; do
+  case "$arg" in
+    -h|--help) usage; exit 0 ;;
+    --csv) CSV=true ;;
+  esac
+done
 
-# Resolve repo: explicit arg (must contain /) > ENG_REPO env var
-if [[ -n "${1:-}" && "$1" == */* ]]; then
-  REPO="$1"
-  shift
-elif [[ -n "${ENG_REPO:-}" ]]; then
-  REPO="$ENG_REPO"
-else
-  echo "Error: missing required argument owner/repo (not in a GitHub repo)" >&2
-  usage >&2
-  exit 1
-fi
+# Strip --csv from positional args
+args=()
+for arg in "$@"; do
+  [[ "$arg" != "--csv" ]] && args+=("$arg")
+done
+set -- "${args[@]+"${args[@]}"}"
 
-# Detect OS and set appropriate date functions
-if [[ "$OSTYPE" == "darwin"* ]]; then
-    # macOS date functions
-    get_cutoff_date() {
-        local days=$1
-        date -u -v-"$days"d +"%Y-%m-%dT%H:%M:%SZ"
-    }
-else
-    # Linux date functions
-    get_cutoff_date() {
-        local days=$1
-        date -u -d "$days days ago" +"%Y-%m-%dT%H:%M:%SZ"
-    }
-fi
+source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
+
+resolve_repo "${1:-}" || { usage >&2; exit 1; }
+[[ "$_REPO_FROM_ARG" == true ]] && shift
 
 DAYS="${1:-30}"
 
@@ -98,6 +90,15 @@ FAIL_COUNT=${#FAIL_PR_NUMS[@]}
 PCT=$(awk "BEGIN { if ($TOTAL > 0) printf \"%.2f\", ($FAIL_COUNT/$TOTAL)*100; else print \"0.00\" }")
 
 # Output
+if [[ "$CSV" == "true" ]]; then
+  echo "PR,Title,URL"
+  for n in "${FAIL_PR_NUMS[@]}"; do
+    csv_title=$(echo "$PR_JSON" | jq -r --argjson num "$n" '.[] | select(.number == $num) | .title' | sed 's/"/""/g')
+    printf "%s,\"%s\",%s\n" "$n" "$csv_title" "https://github.com/$REPO/pull/$n"
+  done
+  exit 0
+fi
+
 echo
 echo "→  Total merged PRs in last $DAYS days: $TOTAL"
 echo "→  PRs flagged as failures: $FAIL_COUNT"

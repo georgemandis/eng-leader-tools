@@ -50,30 +50,10 @@ for arg in "$@"; do
 done
 set -- "${args[@]+"${args[@]}"}"
 
-# Resolve repo: explicit arg (must contain /) > ENG_REPO env var
-if [[ -n "${1:-}" && "$1" == */* ]]; then
-  REPO="$1"
-  shift
-elif [[ -n "${ENG_REPO:-}" ]]; then
-  REPO="$ENG_REPO"
-else
-  echo "Error: missing required argument owner/repo (not in a GitHub repo)" >&2
-  usage >&2
-  exit 1
-fi
+source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 
-# Detect OS and set appropriate date functions
-if [[ "$OSTYPE" == "darwin"* ]]; then
-    parse_timestamp() {
-        local timestamp=$1
-        date -j -f "%Y-%m-%dT%H:%M:%SZ" "$timestamp" +%s
-    }
-else
-    parse_timestamp() {
-        local timestamp=$1
-        date -d "$timestamp" +%s
-    }
-fi
+resolve_repo "${1:-}" || { usage >&2; exit 1; }
+[[ "$_REPO_FROM_ARG" == true ]] && shift
 
 LIMIT="${1:-100}"
 NOW=$(date +%s)

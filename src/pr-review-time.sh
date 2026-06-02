@@ -25,43 +25,37 @@ Arguments:
   owner/repo   GitHub repo (e.g. "octocat/hello-world")
   count        Number of recent merged PRs to analyze (default: 30)
 
+Options:
+  --csv        Output as CSV instead of formatted table
+
 Examples:
   $(basename "$0") my-org/my-repo
   $(basename "$0") my-org/my-repo 50
+  $(basename "$0") my-org/my-repo 50 --csv > review-times.csv
 
 Requires: gh (authenticated), jq
 EOF
 }
 
-if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
-  usage
-  exit 0
-fi
+CSV=false
+for arg in "$@"; do
+  case "$arg" in
+    -h|--help) usage; exit 0 ;;
+    --csv) CSV=true ;;
+  esac
+done
 
-# Resolve repo: explicit arg (must contain /) > ENG_REPO env var
-if [[ -n "${1:-}" && "$1" == */* ]]; then
-  REPO="$1"
-  shift
-elif [[ -n "${ENG_REPO:-}" ]]; then
-  REPO="$ENG_REPO"
-else
-  echo "Error: missing required argument owner/repo (not in a GitHub repo)" >&2
-  usage >&2
-  exit 1
-fi
+# Strip --csv from positional args
+args=()
+for arg in "$@"; do
+  [[ "$arg" != "--csv" ]] && args+=("$arg")
+done
+set -- "${args[@]+"${args[@]}"}"
 
-# Detect OS and set appropriate date functions
-if [[ "$OSTYPE" == "darwin"* ]]; then
-    parse_timestamp() {
-        local timestamp=$1
-        date -j -f "%Y-%m-%dT%H:%M:%SZ" "$timestamp" +%s
-    }
-else
-    parse_timestamp() {
-        local timestamp=$1
-        date -d "$timestamp" +%s
-    }
-fi
+source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
+
+resolve_repo "${1:-}" || { usage >&2; exit 1; }
+[[ "$_REPO_FROM_ARG" == true ]] && shift
 
 # Function to format time in human-readable units
 format_time() {
@@ -83,10 +77,12 @@ format_time() {
 
 COUNT="${1:-30}"
 
-if [[ -n "${ENG_TEAM:-}" ]]; then
-  echo "Analyzing PR review times for $REPO (last $COUNT merged PRs, team: $ENG_TEAM) …"
-else
-  echo "Analyzing PR review times for $REPO (last $COUNT merged PRs) …"
+if [[ "$CSV" == "false" ]]; then
+  if [[ -n "${ENG_TEAM:-}" ]]; then
+    echo "Analyzing PR review times for $REPO (last $COUNT merged PRs, team: $ENG_TEAM) …"
+  else
+    echo "Analyzing PR review times for $REPO (last $COUNT merged PRs) …"
+  fi
 fi
 
 # Fetch recent merged PRs
@@ -125,15 +121,19 @@ total_merge_time=0
 total_prs_with_reviews=0
 total_prs=0
 
-printf "\nPR Review Analysis:\n"
-printf "──────────────────\n"
-printf "%-6s %-8s %-8s %-8s %-18s %s\n" "PR#" "1st Rev" "Merge" "Reviews" "Author" "URL"
-printf "%s\n" "──────────────────────────────────────────────────────────────────────────────────────"
+if [[ "$CSV" == "false" ]]; then
+  printf "\nPR Review Analysis:\n"
+  printf "──────────────────\n"
+  printf "%-6s %-8s %-8s %-8s %-18s %s\n" "PR#" "1st Rev" "Merge" "Reviews" "Author" "URL"
+  printf "%s\n" "──────────────────────────────────────────────────────────────────────────────────────"
+else
+  echo "PR,FirstReview,MergeTime,Reviews,Author,URL"
+fi
 
 # Process each PR
 echo "$PR_JSON" | jq -r '.[] | @base64' | while IFS= read -r pr_b64; do
   pr=$(echo "$pr_b64" | base64 --decode)
-  
+
   num=$(echo "$pr" | jq -r '.number')
   created=$(echo "$pr" | jq -r '.createdAt')
   merged=$(echo "$pr" | jq -r '.mergedAt')
@@ -143,30 +143,36 @@ echo "$PR_JSON" | jq -r '.[] | @base64' | while IFS= read -r pr_b64; do
   # Get review information
   reviews=$(gh api "repos/$REPO/pulls/$num/reviews" --paginate)
   review_count=$(echo "$reviews" | jq 'length')
-  
+
   # Calculate times
   ts_created=$(parse_timestamp "$created")
   ts_merged=$(parse_timestamp "$merged")
   merge_delta=$(( ts_merged - ts_created ))
   merge_time=$(format_time "$merge_delta")
-  
+
   if (( review_count > 0 )); then
     first_review_date=$(echo "$reviews" | jq -r 'min_by(.submitted_at) | .submitted_at')
     ts_first_review=$(parse_timestamp "$first_review_date")
     first_review_delta=$(( ts_first_review - ts_created ))
     first_review_time=$(format_time "$first_review_delta")
-    
+
     total_first_review_time=$((total_first_review_time + first_review_delta))
     total_prs_with_reviews=$((total_prs_with_reviews + 1))
   else
     first_review_time="N/A"
   fi
-  
-  printf "#%-5s %-8s %-8s %-8s %-18s %s\n" "$num" "$first_review_time" "$merge_time" "$review_count" "$author" "$url"
-  
+
+  if [[ "$CSV" == "true" ]]; then
+    printf "%s,%s,%s,%s,%s,%s\n" "$num" "$first_review_time" "$merge_time" "$review_count" "$author" "$url"
+  else
+    printf "#%-5s %-8s %-8s %-8s %-18s %s\n" "$num" "$first_review_time" "$merge_time" "$review_count" "$author" "$url"
+  fi
+
   total_merge_time=$((total_merge_time + merge_delta))
   total_prs=$((total_prs + 1))
 done
+
+[[ "$CSV" == "true" ]] && exit 0
 
 if (( total_prs > 0 )); then
   avg_merge_time=$(( total_merge_time / total_prs ))

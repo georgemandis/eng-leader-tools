@@ -41,30 +41,10 @@ if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
   exit 0
 fi
 
-# Resolve repo: explicit arg (must contain /) > ENG_REPO env var
-if [[ -n "${1:-}" && "$1" == */* ]]; then
-  REPO="$1"
-  shift
-elif [[ -n "${ENG_REPO:-}" ]]; then
-  REPO="$ENG_REPO"
-else
-  echo "Error: missing required argument owner/repo (not in a GitHub repo)" >&2
-  usage >&2
-  exit 1
-fi
+source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 
-# Detect OS and set appropriate date functions
-if [[ "$OSTYPE" == "darwin"* ]]; then
-    get_cutoff_date() {
-        local days=$1
-        date -u -v-"$days"d +"%Y-%m-%dT%H:%M:%SZ"
-    }
-else
-    get_cutoff_date() {
-        local days=$1
-        date -u -d "$days days ago" +"%Y-%m-%dT%H:%M:%SZ"
-    }
-fi
+resolve_repo "${1:-}" || { usage >&2; exit 1; }
+[[ "$_REPO_FROM_ARG" == true ]] && shift
 
 DAYS="${1:-30}"
 MIN_CHANGES="${2:-3}"

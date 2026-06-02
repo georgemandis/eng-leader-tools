@@ -5,7 +5,7 @@
 
 set -euo pipefail
 
-VERSION="0.2.0"
+VERSION="0.2.1"
 
 # Resolve where the scripts live (follow symlinks to find real location)
 SOURCE="$0"
@@ -57,14 +57,20 @@ for _arg in "${_eng_args[@]:1}"; do
   fi
 done
 
-# Auto-detect GitHub repo from git remote (only if not already set)
+# Auto-detect GitHub repo from git remote (only if not already set).
+# Validate captured owner/repo against GitHub-allowed charset to prevent
+# a malicious remote from injecting extra flags into downstream gh calls.
 if [[ -z "${ENG_REPO:-}" ]]; then
   _remote_url=$(git remote get-url origin 2>/dev/null || true)
   if [[ -n "$_remote_url" ]]; then
     _remote_url="${_remote_url%.git}"
     if [[ "$_remote_url" =~ github\.com[:/]([^/]+)/(.+)$ ]]; then
-      export ENG_OWNER="${BASH_REMATCH[1]}"
-      export ENG_REPO="${BASH_REMATCH[1]}/${BASH_REMATCH[2]}"
+      _owner="${BASH_REMATCH[1]}"
+      _repo_name="${BASH_REMATCH[2]}"
+      if [[ "$_owner" =~ ^[A-Za-z0-9._-]+$ && "$_repo_name" =~ ^[A-Za-z0-9._-]+$ ]]; then
+        export ENG_OWNER="$_owner"
+        export ENG_REPO="$_owner/$_repo_name"
+      fi
     fi
   fi
 fi
