@@ -24,18 +24,32 @@ Arguments:
   owner/repo   GitHub repo (e.g. "octocat/hello-world")
   days         Lookback window in days (default: 30)
 
+Options:
+  --csv        Output failed PRs as CSV instead of narrative summary
+
 Examples:
   $(basename "$0") my-org/my-repo
   $(basename "$0") my-org/my-repo 90
+  $(basename "$0") my-org/my-repo 30 --csv > failures.csv
 
 Requires: gh (authenticated), jq
 EOF
 }
 
-if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
-  usage
-  exit 0
-fi
+CSV=false
+for arg in "$@"; do
+  case "$arg" in
+    -h|--help) usage; exit 0 ;;
+    --csv) CSV=true ;;
+  esac
+done
+
+# Strip --csv from positional args
+args=()
+for arg in "$@"; do
+  [[ "$arg" != "--csv" ]] && args+=("$arg")
+done
+set -- "${args[@]+"${args[@]}"}"
 
 source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 
@@ -76,6 +90,15 @@ FAIL_COUNT=${#FAIL_PR_NUMS[@]}
 PCT=$(awk "BEGIN { if ($TOTAL > 0) printf \"%.2f\", ($FAIL_COUNT/$TOTAL)*100; else print \"0.00\" }")
 
 # Output
+if [[ "$CSV" == "true" ]]; then
+  echo "PR,Title,URL"
+  for n in "${FAIL_PR_NUMS[@]}"; do
+    csv_title=$(echo "$PR_JSON" | jq -r --argjson num "$n" '.[] | select(.number == $num) | .title' | sed 's/"/""/g')
+    printf "%s,\"%s\",%s\n" "$n" "$csv_title" "https://github.com/$REPO/pull/$n"
+  done
+  exit 0
+fi
+
 echo
 echo "→  Total merged PRs in last $DAYS days: $TOTAL"
 echo "→  PRs flagged as failures: $FAIL_COUNT"

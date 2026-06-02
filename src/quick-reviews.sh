@@ -6,6 +6,7 @@ OWNER="${ENG_OWNER:-}"
 REPO="${ENG_REPO:+${ENG_REPO##*/}}"
 LIMIT=100
 ONLY_UNAPPROVED=true
+CSV=false
 
 # Parse command line flags
 while getopts "o:r:l:ah" opt; do
@@ -16,7 +17,7 @@ while getopts "o:r:l:ah" opt; do
     a) ONLY_UNAPPROVED=false ;;
     h)
       cat <<EOF
-Usage: $(basename "$0") -o owner -r repo [-l limit] [-a]
+Usage: $(basename "$0") -o owner -r repo [-l limit] [-a] [--csv]
 
 Surfaces small open PRs (1-2 files, non-draft) that haven't been
 approved yet — quick wins for reviewers looking to help unblock work.
@@ -26,11 +27,13 @@ Options:
   -r repo     Repository name (required)
   -l limit    Number of PRs to fetch (default: 100)
   -a          Include approved PRs (default: only show unapproved)
+  --csv       Output as CSV instead of formatted list
   -h          Show this help
 
 Examples:
   $(basename "$0") -o my-org -r my-repo
   $(basename "$0") -o my-org -r my-repo -a -l 200
+  $(basename "$0") -o my-org -r my-repo --csv > quick-reviews.csv
 
 Requires: gh (authenticated), jq
 EOF
@@ -43,6 +46,8 @@ EOF
       ;;
   esac
 done
+
+for arg in "$@"; do [[ "$arg" == "--csv" ]] && CSV=true; done
 
 if [[ -z "$OWNER" || -z "$REPO" ]]; then
   echo "Error: -o owner and -r repo are required" >&2
@@ -71,28 +76,57 @@ if [[ -n "${ENG_TEAM_MEMBERS:-}" ]]; then
   _team_label=""
   [[ -n "${ENG_TEAM:-}" ]] && _team_label=" (team: $ENG_TEAM)"
 
-  echo "$_all_prs" | jq -r --argjson only_unapproved "$ONLY_UNAPPROVED" --arg team_label "$_team_label" '
-    unique_by(.number) |
-    map(select(.changedFiles <= 2 and .changedFiles >= 1 and .isDraft == false)) |
-    if $only_unapproved then
-      map(select(.reviewDecision != "APPROVED"))
-    else
-      .
-    end |
-    sort_by(.updatedAt) | reverse |
-    if length == 0 then
-      "No matching PRs found\($team_label)"
-    else
-      .[] | "\(.updatedAt | split("T")[0]) • \(.title) • \(.url)"
-    end
-  '
+  if [[ "$CSV" == "true" ]]; then
+    echo "Date,Title,Author,Files,URL"
+    echo "$_all_prs" | jq -r --argjson only_unapproved "$ONLY_UNAPPROVED" '
+      unique_by(.number) |
+      map(select(.changedFiles <= 2 and .changedFiles >= 1 and .isDraft == false)) |
+      if $only_unapproved then
+        map(select(.reviewDecision != "APPROVED"))
+      else
+        .
+      end |
+      sort_by(.updatedAt) | reverse |
+      .[] | "\(.updatedAt | split("T")[0]),\"\(.title | gsub("\""; "\"\""))\",\(.author.login),\(.changedFiles),\(.url)"
+    '
+  else
+    echo "$_all_prs" | jq -r --argjson only_unapproved "$ONLY_UNAPPROVED" --arg team_label "$_team_label" '
+      unique_by(.number) |
+      map(select(.changedFiles <= 2 and .changedFiles >= 1 and .isDraft == false)) |
+      if $only_unapproved then
+        map(select(.reviewDecision != "APPROVED"))
+      else
+        .
+      end |
+      sort_by(.updatedAt) | reverse |
+      if length == 0 then
+        "No matching PRs found\($team_label)"
+      else
+        .[] | "\(.updatedAt | split("T")[0]) • \(.title) • \(.url)"
+      end
+    '
+  fi
 else
-  gh pr list \
+  _pr_data=$(gh pr list \
     --repo "$OWNER/$REPO" \
     --state open \
     --limit "$LIMIT" \
-    --json number,title,url,author,changedFiles,updatedAt,reviewDecision,isDraft \
-    | jq -r --argjson only_unapproved "$ONLY_UNAPPROVED" '
+    --json number,title,url,author,changedFiles,updatedAt,reviewDecision,isDraft)
+
+  if [[ "$CSV" == "true" ]]; then
+    echo "Date,Title,Author,Files,URL"
+    echo "$_pr_data" | jq -r --argjson only_unapproved "$ONLY_UNAPPROVED" '
+      map(select(.changedFiles <= 2 and .changedFiles >= 1 and .isDraft == false)) |
+      if $only_unapproved then
+        map(select(.reviewDecision != "APPROVED"))
+      else
+        .
+      end |
+      sort_by(.updatedAt) | reverse |
+      .[] | "\(.updatedAt | split("T")[0]),\"\(.title | gsub("\""; "\"\""))\",\(.author.login),\(.changedFiles),\(.url)"
+    '
+  else
+    echo "$_pr_data" | jq -r --argjson only_unapproved "$ONLY_UNAPPROVED" '
       map(select(.changedFiles <= 2 and .changedFiles >= 1 and .isDraft == false)) |
       if $only_unapproved then
         map(select(.reviewDecision != "APPROVED"))
@@ -110,4 +144,5 @@ else
         .[] | "\(.updatedAt | split("T")[0]) • \(.title) • \(.url)"
       end
     '
+  fi
 fi

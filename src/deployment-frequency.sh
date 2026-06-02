@@ -24,18 +24,32 @@ Arguments:
   owner/repo   GitHub repo (e.g. "octocat/hello-world")
   days         Lookback window in days (default: 90)
 
+Options:
+  --csv        Output as CSV instead of formatted table
+
 Examples:
   $(basename "$0") my-org/my-repo
   $(basename "$0") my-org/my-repo 180
+  $(basename "$0") my-org/my-repo 180 --csv > deployments.csv
 
 Requires: gh (authenticated), jq
 EOF
 }
 
-if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
-  usage
-  exit 0
-fi
+CSV=false
+for arg in "$@"; do
+  case "$arg" in
+    -h|--help) usage; exit 0 ;;
+    --csv) CSV=true ;;
+  esac
+done
+
+# Strip --csv from positional args
+args=()
+for arg in "$@"; do
+  [[ "$arg" != "--csv" ]] && args+=("$arg")
+done
+set -- "${args[@]+"${args[@]}"}"
 
 source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 
@@ -59,7 +73,7 @@ DAYS="${1:-90}"
 
 CUTOFF=$(get_cutoff_date "$DAYS")
 
-echo "Analyzing deployment frequency for $REPO (last $DAYS days) …"
+[[ "$CSV" == "false" ]] && echo "Analyzing deployment frequency for $REPO (last $DAYS days) …"
 
 # Fetch releases/tags since cutoff
 RELEASES_JSON=$(gh api "repos/$REPO/releases" --paginate | \
@@ -72,10 +86,12 @@ TAGS_JSON=$(gh api "repos/$REPO/tags" --paginate | \
 release_count=$(echo "$RELEASES_JSON" | jq 'length')
 tag_count=$(echo "$TAGS_JSON" | jq 'length')
 
-printf "\nDeployment Activity:\n"
-printf "────────────────────\n"
-printf "• Releases in last %d days: %d\n" "$DAYS" "$release_count"
-printf "• Tags in last %d days: %d\n" "$DAYS" "$tag_count"
+if [[ "$CSV" == "false" ]]; then
+  printf "\nDeployment Activity:\n"
+  printf "────────────────────\n"
+  printf "• Releases in last %d days: %d\n" "$DAYS" "$release_count"
+  printf "• Tags in last %d days: %d\n" "$DAYS" "$tag_count"
+fi
 
 # Use releases if available, otherwise fall back to tags
 if (( release_count > 0 )); then
@@ -97,25 +113,29 @@ if (( deployment_count == 0 )); then
   exit 0
 fi
 
-printf "• Using %s for analysis\n\n" "$deployment_type"
+if [[ "$CSV" == "false" ]]; then
+  printf "• Using %s for analysis\n\n" "$deployment_type"
 
-# Calculate frequency
-if (( deployment_count > 1 )); then
-  avg_days=$(awk "BEGIN { printf \"%.1f\", $DAYS/$deployment_count }")
-  printf "Average deployment frequency: Every %s days\n\n" "$avg_days"
+  # Calculate frequency
+  if (( deployment_count > 1 )); then
+    avg_days=$(awk "BEGIN { printf \"%.1f\", $DAYS/$deployment_count }")
+    printf "Average deployment frequency: Every %s days\n\n" "$avg_days"
+  fi
+
+  # Show recent deployments
+  printf "Recent Deployments:\n"
+  printf "───────────────────\n"
+  printf "%-12s %-20s %s\n" "Date" "Version" "Time Since Previous"
+  printf "%s\n" "────────────────────────────────────────────────────────"
+else
+  echo "Date,Version,TimeSincePrevious"
 fi
-
-# Show recent deployments
-printf "Recent Deployments:\n"
-printf "───────────────────\n"
-printf "%-12s %-20s %s\n" "Date" "Version" "Time Since Previous"
-printf "%s\n" "────────────────────────────────────────────────────────"
 
 # Sort deployments by date (most recent first) and calculate intervals
 echo "$deployments" | jq -r "sort_by($date_field) | reverse | .[] | [$date_field, $name_field] | @tsv" | \
 while IFS=$'\t' read -r timestamp name; do
   formatted_date=$(format_date "$timestamp")
-  
+
   # Calculate time since previous deployment
   if [[ -n "${prev_timestamp:-}" ]]; then
     current_ts=$(parse_timestamp "$timestamp")
@@ -125,10 +145,16 @@ while IFS=$'\t' read -r timestamp name; do
   else
     time_diff="(most recent)"
   fi
-  
-  printf "%-12s %-20s %s\n" "$formatted_date" "$name" "$time_diff"
+
+  if [[ "$CSV" == "true" ]]; then
+    printf "%s,%s,%s\n" "$formatted_date" "$name" "$time_diff"
+  else
+    printf "%-12s %-20s %s\n" "$formatted_date" "$name" "$time_diff"
+  fi
   prev_timestamp="$timestamp"
 done
+
+[[ "$CSV" == "true" ]] && exit 0
 
 # DORA metrics assessment
 echo

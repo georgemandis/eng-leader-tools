@@ -26,18 +26,32 @@ Arguments:
   owner/repo   GitHub repo (e.g. "octocat/hello-world")
   count        Number of recent merged PRs to analyze (default: 50)
 
+Options:
+  --csv        Output as CSV instead of formatted table
+
 Examples:
   $(basename "$0") my-org/my-repo
   $(basename "$0") my-org/my-repo 100
+  $(basename "$0") my-org/my-repo 100 --csv > file-patterns.csv
 
 Requires: gh (authenticated), jq
 EOF
 }
 
-if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
-  usage
-  exit 0
-fi
+CSV=false
+for arg in "$@"; do
+  case "$arg" in
+    -h|--help) usage; exit 0 ;;
+    --csv) CSV=true ;;
+  esac
+done
+
+# Strip --csv from positional args
+args=()
+for arg in "$@"; do
+  [[ "$arg" != "--csv" ]] && args+=("$arg")
+done
+set -- "${args[@]+"${args[@]}"}"
 
 source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 
@@ -46,10 +60,12 @@ resolve_repo "${1:-}" || { usage >&2; exit 1; }
 
 COUNT="${1:-50}"
 
-if [[ -n "${ENG_TEAM:-}" ]]; then
-  echo "Analyzing file change patterns for contributors in $REPO (last $COUNT PRs, team: $ENG_TEAM) …"
-else
-  echo "Analyzing file change patterns for contributors in $REPO (last $COUNT PRs) …"
+if [[ "$CSV" == "false" ]]; then
+  if [[ -n "${ENG_TEAM:-}" ]]; then
+    echo "Analyzing file change patterns for contributors in $REPO (last $COUNT PRs, team: $ENG_TEAM) …"
+  else
+    echo "Analyzing file change patterns for contributors in $REPO (last $COUNT PRs) …"
+  fi
 fi
 
 # Fetch recent merged PRs with author info
@@ -108,19 +124,23 @@ echo "$PR_JSON" | jq -r '.[] | @base64' | while IFS= read -r pr_b64; do
 done
 
 # Aggregate data by contributor
-printf "\nContributor File Change Patterns:\n"
-printf "%-20s %5s %5s %5s %5s\n" "Author" "PRs" "Total" "Avg" "Max"
-printf "%s\n" "──────────────────────────────────────────────────────────"
+if [[ "$CSV" == "false" ]]; then
+  printf "\nContributor File Change Patterns:\n"
+  printf "%-20s %5s %5s %5s %5s\n" "Author" "PRs" "Total" "Avg" "Max"
+  printf "%s\n" "──────────────────────────────────────────────────────────"
+else
+  echo "Author,PRs,TotalFiles,AvgFiles,MaxFiles"
+fi
 
 # Group by author and calculate stats
-sort "$temp_file" | awk '
+sort "$temp_file" | awk -v csv="$CSV" '
 {
   author = $1
   files = $2
-  
+
   count[author]++
   total[author] += files
-  
+
   if (files > max[author]) {
     max[author] = files
   }
@@ -128,9 +148,15 @@ sort "$temp_file" | awk '
 END {
   for (author in count) {
     avg = total[author] / count[author]
-    printf "%-20s %5d %5d %5.1f %5d\n", author, count[author], total[author], avg, max[author]
+    if (csv == "true") {
+      printf "%s,%d,%d,%.1f,%d\n", author, count[author], total[author], avg, max[author]
+    } else {
+      printf "%-20s %5d %5d %5.1f %5d\n", author, count[author], total[author], avg, max[author]
+    }
   }
 }' | sort -k3 -nr
+
+[[ "$CSV" == "true" ]] && exit 0
 
 echo
 

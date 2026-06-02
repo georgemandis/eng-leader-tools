@@ -26,18 +26,32 @@ Arguments:
   owner/repo   GitHub repo (e.g. "octocat/hello-world")
   count        Number of recent merged PRs to analyze (default: 50)
 
+Options:
+  --csv        Output as CSV instead of formatted table
+
 Examples:
   $(basename "$0") my-org/my-repo
   $(basename "$0") my-org/my-repo 100
+  $(basename "$0") my-org/my-repo 100 --csv > pr-sizes.csv
 
 Requires: gh (authenticated), jq
 EOF
 }
 
-if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
-  usage
-  exit 0
-fi
+CSV=false
+for arg in "$@"; do
+  case "$arg" in
+    -h|--help) usage; exit 0 ;;
+    --csv) CSV=true ;;
+  esac
+done
+
+# Strip --csv from positional args
+args=()
+for arg in "$@"; do
+  [[ "$arg" != "--csv" ]] && args+=("$arg")
+done
+set -- "${args[@]+"${args[@]}"}"
 
 source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 
@@ -78,10 +92,12 @@ categorize_pr_size() {
 
 COUNT="${1:-50}"
 
-if [[ -n "${ENG_TEAM:-}" ]]; then
-  echo "Analyzing PR size distribution for $REPO (last $COUNT merged PRs, team: $ENG_TEAM) …"
-else
-  echo "Analyzing PR size distribution for $REPO (last $COUNT merged PRs) …"
+if [[ "$CSV" == "false" ]]; then
+  if [[ -n "${ENG_TEAM:-}" ]]; then
+    echo "Analyzing PR size distribution for $REPO (last $COUNT merged PRs, team: $ENG_TEAM) …"
+  else
+    echo "Analyzing PR size distribution for $REPO (last $COUNT merged PRs) …"
+  fi
 fi
 
 # Fetch merged PRs with detailed info
@@ -129,15 +145,19 @@ total_prs=0
 total_additions=0
 total_deletions=0
 
-printf "\nPR Size Analysis:\n"
-printf "─────────────────\n"
-printf "%-6s %-4s %-5s %-6s %-8s %-8s %-25s %s\n" "PR#" "Size" "Files" "Lines" "Review" "Author" "Title" "URL"
-printf "%s\n" "──────────────────────────────────────────────────────────────────────────────────────────────────────"
+if [[ "$CSV" == "false" ]]; then
+  printf "\nPR Size Analysis:\n"
+  printf "─────────────────\n"
+  printf "%-6s %-4s %-5s %-6s %-8s %-8s %-25s %s\n" "PR#" "Size" "Files" "Lines" "Review" "Author" "Title" "URL"
+  printf "%s\n" "──────────────────────────────────────────────────────────────────────────────────────────────────────"
+else
+  echo "PR,Size,Files,Lines,Additions,Deletions,ReviewTime,Author,Title,URL"
+fi
 
 # Analyze each PR
 echo "$PR_JSON" | jq -r '.[] | @base64' | while IFS= read -r pr_b64; do
   pr=$(echo "$pr_b64" | base64 --decode)
-  
+
   num=$(echo "$pr" | jq -r '.number')
   title=$(echo "$pr" | jq -r '.title')
   additions=$(echo "$pr" | jq -r '.additions')
@@ -149,33 +169,40 @@ echo "$PR_JSON" | jq -r '.[] | @base64' | while IFS= read -r pr_b64; do
 
   # Get file count
   files_count=$(gh api "repos/$REPO/pulls/$num/files" --paginate | jq 'length')
-  
+
   # Calculate review time
   ts_created=$(parse_timestamp "$created")
   ts_merged=$(parse_timestamp "$merged")
   review_time_sec=$(( ts_merged - ts_created ))
   review_time=$(format_time "$review_time_sec")
-  
+
   # Categorize PR size
   size=$(categorize_pr_size "$additions" "$deletions" "$files_count")
-  
+
   total_lines=$(( additions + deletions ))
-  
-  # Truncate title and author for display
-  short_title=$(echo "$title" | cut -c1-25)
-  short_author=$(echo "$author" | cut -c1-8)
-  
-  printf "#%-5s %-4s %-5s %-6s %-8s %-8s %-25s %s\n" \
-    "$num" "$size" "$files_count" "$total_lines" "$review_time" "$short_author" "$short_title" "$url"
-  
+
+  if [[ "$CSV" == "true" ]]; then
+    csv_title=$(echo "$title" | sed 's/"/""/g')
+    printf "%s,%s,%s,%s,%s,%s,%s,%s,\"%s\",%s\n" \
+      "$num" "$size" "$files_count" "$total_lines" "$additions" "$deletions" "$review_time" "$author" "$csv_title" "$url"
+  else
+    # Truncate title and author for display
+    short_title=$(echo "$title" | cut -c1-25)
+    short_author=$(echo "$author" | cut -c1-8)
+    printf "#%-5s %-4s %-5s %-6s %-8s %-8s %-25s %s\n" \
+      "$num" "$size" "$files_count" "$total_lines" "$review_time" "$short_author" "$short_title" "$url"
+  fi
+
   # Accumulate stats
   size_counts[$size]=$((size_counts[$size] + 1))
   size_total_times[$size]=$((${size_total_times[$size]:-0} + review_time_sec))
-  
+
   total_prs=$((total_prs + 1))
   total_additions=$((total_additions + additions))
   total_deletions=$((total_deletions + deletions))
 done
+
+[[ "$CSV" == "true" ]] && exit 0
 
 if (( total_prs == 0 )); then
   exit 0
