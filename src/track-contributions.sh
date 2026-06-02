@@ -47,7 +47,7 @@ fi
 
 VERBOSE=false
 
-source "$(dirname "${BASH_SOURCE[0]}")/_dates.sh"
+source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 
 # Parse arguments
 USERNAME=""

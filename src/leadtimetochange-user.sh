@@ -53,7 +53,7 @@ for arg in "$@"; do
 done
 set -- "${args[@]+"${args[@]}"}"
 
-source "$(dirname "${BASH_SOURCE[0]}")/_dates.sh"
+source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 
 # Function to format time in human-readable units
 format_time() {
@@ -73,17 +73,8 @@ format_time() {
     fi
 }
 
-# Resolve repo: explicit arg (must contain /) > ENG_REPO env var
-if [[ -n "${1:-}" && "$1" == */* ]]; then
-  REPO="$1"
-  shift
-elif [[ -n "${ENG_REPO:-}" ]]; then
-  REPO="$ENG_REPO"
-else
-  echo "Error: missing required argument owner/repo (not in a GitHub repo)" >&2
-  usage >&2
-  exit 1
-fi
+resolve_repo "${1:-}" || { usage >&2; exit 1; }
+[[ "$_REPO_FROM_ARG" == true ]] && shift
 
 if [[ $# -lt 1 ]]; then
   echo "Error: missing required argument username" >&2
