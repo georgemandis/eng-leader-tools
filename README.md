@@ -1,7 +1,5 @@
 # engleader.tools
 
-> **Current version: v0.2.0**
-
 A collection of bash scripts for engineering leadership metrics and team health analysis. Built on the GitHub CLI (`gh`) and `jq`, these scripts give you quick, terminal-friendly insights into how your team ships code. Inspired by DORA metrics and practical eng management needs.
 
 ## Install
