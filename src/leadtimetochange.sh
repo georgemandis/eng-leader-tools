@@ -23,6 +23,7 @@ Arguments:
   owner/repo   GitHub repo (e.g. "octocat/hello-world")
   days         Lookback window in days (default: 30)
   --csv        Output as CSV instead of formatted table
+  --json       Output as a single JSON envelope (machine-readable)
 
 Examples:
   $(basename "$0") my-org/my-repo
@@ -34,17 +35,19 @@ EOF
 }
 
 CSV=false
+JSON=false
 for arg in "$@"; do
   case "$arg" in
     -h|--help) usage; exit 0 ;;
     --csv) CSV=true ;;
+    --json) JSON=true ;;
   esac
 done
 
-# Strip --csv from positional args
+# Strip --csv / --json from positional args
 args=()
 for arg in "$@"; do
-  [[ "$arg" != "--csv" ]] && args+=("$arg")
+  [[ "$arg" != "--csv" && "$arg" != "--json" ]] && args+=("$arg")
 done
 set -- "${args[@]+"${args[@]}"}"
 
@@ -52,6 +55,8 @@ source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 
 resolve_repo "${1:-}" || { usage >&2; exit 1; }
 [[ "$_REPO_FROM_ARG" == true ]] && shift
+
+[[ "$JSON" == "true" ]] && json_preflight
 
 # Function to format time in human-readable units
 format_time() {
@@ -76,7 +81,7 @@ DAYS="${1:-30}"
 # Calculate the cutoff timestamp (ISO 8601) for filtering merged PRs
 CUTOFF=$(get_cutoff_date "$DAYS")
 
-if [[ "$CSV" == "false" ]]; then
+if [[ "$CSV" == "false" && "$JSON" == "false" ]]; then
   if [[ -n "${ENG_TEAM:-}" ]]; then
     echo "Fetching PRs merged since $CUTOFF in $REPO (team: $ENG_TEAM) …"
   else
@@ -115,6 +120,10 @@ else
 fi
 
 if [[ -z "$PR_JSON" ]]; then
+  if [[ "$JSON" == "true" ]]; then
+    emit_json "lead-time" "$DAYS" '{"count":0,"avg_seconds":0,"prs":[]}'
+    exit 0
+  fi
   echo "No PRs merged in the last $DAYS days." >&2
   exit 0
 fi
@@ -123,12 +132,16 @@ fi
 total_seconds=0
 count=0
 
-if [[ "$CSV" == "true" ]]; then
+if [[ "$JSON" == "true" ]]; then
+  : # collect into pr_records below; no header
+elif [[ "$CSV" == "true" ]]; then
   echo "PR,Author,Lead Time,Lead Time (seconds),Created,Merged,URL"
 else
   printf "\n%-6s  %-18s  %-15s  %-20s  %-20s  %s\n" "PR#" "Author" "Lead Time" "Created" "Merged" "URL"
   printf "%s\n" "--------------------------------------------------------------------------------------------------------------"
 fi
+
+pr_records=()
 
 # Process each PR and store results in arrays
 while IFS= read -r pr; do
@@ -145,7 +158,16 @@ while IFS= read -r pr; do
 
   pr_link="https://github.com/$REPO/pull/$num"
 
-  if [[ "$CSV" == "true" ]]; then
+  if [[ "$JSON" == "true" ]]; then
+    pr_records+=("$(jq -n \
+      --argjson number "$num" \
+      --arg author "$author" \
+      --argjson lead "$delta" \
+      --arg created "$created" \
+      --arg merged "$merged" \
+      --arg url "$pr_link" \
+      '{number:$number, author:$author, lead_time_seconds:$lead, created_at:$created, merged_at:$merged, url:$url}')")
+  elif [[ "$CSV" == "true" ]]; then
     printf "%s,%s,%s,%s,%s,%s,%s\n" "$num" "$author" "$normalized_time" "$delta" "$created" "$merged" "$pr_link"
   else
     printf "#%-5s  %-18s  %-15s  %-20s  %-20s  %s\n" "$num" "$author" "$normalized_time" "$created" "$merged" "$pr_link"
@@ -155,7 +177,17 @@ while IFS= read -r pr; do
   count=$(( count + 1 ))
 done <<< "$PR_JSON"
 
-if (( count > 0 )) && [[ "$CSV" == "false" ]]; then
+if [[ "$JSON" == "true" ]]; then
+  avg_sec=0
+  (( count > 0 )) && avg_sec=$(( total_seconds / count ))
+  prs_array=$(printf '%s\n' "${pr_records[@]+"${pr_records[@]}"}" | jq -s '.')
+  data=$(jq -n \
+    --argjson count "$count" \
+    --argjson avg "$avg_sec" \
+    --argjson prs "$prs_array" \
+    '{count:$count, avg_seconds:$avg, prs:$prs}')
+  emit_json "lead-time" "$DAYS" "$data"
+elif (( count > 0 )) && [[ "$CSV" == "false" ]]; then
   avg_sec=$(( total_seconds / count ))
   avg_time=$(format_time "$avg_sec")
   printf "\nAnalyzed %d PR(s) • Average lead time: %s\n" "$count" "$avg_time"
