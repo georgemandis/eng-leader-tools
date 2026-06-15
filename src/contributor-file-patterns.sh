@@ -28,6 +28,7 @@ Arguments:
 
 Options:
   --csv        Output as CSV instead of formatted table
+  --json       Output as a single JSON envelope (machine-readable)
 
 Examples:
   $(basename "$0") my-org/my-repo
@@ -39,17 +40,22 @@ EOF
 }
 
 CSV=false
+JSON=false
 for arg in "$@"; do
   case "$arg" in
     -h|--help) usage; exit 0 ;;
     --csv) CSV=true ;;
+    --json) JSON=true ;;
   esac
 done
 
-# Strip --csv from positional args
+# JSON wins over CSV
+[[ "$JSON" == "true" ]] && CSV=false
+
+# Strip --csv/--json from positional args
 args=()
 for arg in "$@"; do
-  [[ "$arg" != "--csv" ]] && args+=("$arg")
+  [[ "$arg" != "--csv" && "$arg" != "--json" ]] && args+=("$arg")
 done
 set -- "${args[@]+"${args[@]}"}"
 
@@ -58,9 +64,11 @@ source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 resolve_repo "${1:-}" || { usage >&2; exit 1; }
 [[ "$_REPO_FROM_ARG" == true ]] && shift
 
+[[ "$JSON" == "true" ]] && json_preflight
+
 COUNT="${1:-50}"
 
-if [[ "$CSV" == "false" ]]; then
+if [[ "$CSV" == "false" && "$JSON" == "false" ]]; then
   if [[ -n "${ENG_TEAM:-}" ]]; then
     echo "Analyzing file change patterns for contributors in $REPO (last $COUNT PRs, team: $ENG_TEAM) …"
   else
@@ -95,6 +103,10 @@ else
 fi
 
 if [[ -z "$PR_JSON" ]] || [[ "$PR_JSON" == "[]" ]]; then
+  if [[ "$JSON" == "true" ]]; then
+    emit_json "contributor-patterns" null '{"contributors":[]}'
+    exit 0
+  fi
   echo "No merged PRs found."
   exit 0
 fi
@@ -122,6 +134,32 @@ echo "$PR_JSON" | jq -r '.[] | @base64' | while IFS= read -r pr_b64; do
   
   echo "$author $files_count" >> "$temp_file"
 done
+
+# JSON output: aggregate per-contributor stats from the collected source and
+# emit a single envelope. The positional arg is a PR COUNT, not a day window,
+# so window_days is null.
+if [[ "$JSON" == "true" ]]; then
+  data=$(sort "$temp_file" | awk '
+  {
+    author = $1
+    files = $2
+    count[author]++
+    total[author] += files
+  }
+  END {
+    printf "["
+    first = 1
+    for (author in count) {
+      avg = total[author] / count[author]
+      if (!first) printf ","
+      first = 0
+      printf "{\"login\":\"%s\",\"pr_count\":%d,\"avg_files_per_pr\":%g}", author, count[author], avg
+    }
+    printf "]"
+  }' | jq '{ contributors: (sort_by(.pr_count) | reverse) }')
+  emit_json "contributor-patterns" null "$data"
+  exit 0
+fi
 
 # Aggregate data by contributor
 if [[ "$CSV" == "false" ]]; then

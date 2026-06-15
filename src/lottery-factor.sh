@@ -33,23 +33,26 @@ Examples:
 
 Options:
   --csv        Output as CSV instead of formatted table
+  --json       Output as a single JSON envelope (machine-readable)
 
 Requires: gh (authenticated), jq
 EOF
 }
 
 CSV=false
+JSON=false
 for arg in "$@"; do
   case "$arg" in
     -h|--help) usage; exit 0 ;;
     --csv) CSV=true ;;
+    --json) JSON=true ;;
   esac
 done
 
-# Strip --csv from positional args
+# Strip --csv/--json from positional args
 args=()
 for arg in "$@"; do
-  [[ "$arg" != "--csv" ]] && args+=("$arg")
+  [[ "$arg" != "--csv" && "$arg" != "--json" ]] && args+=("$arg")
 done
 set -- "${args[@]+"${args[@]}"}"
 
@@ -58,10 +61,12 @@ source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 resolve_repo "${1:-}" || { usage >&2; exit 1; }
 [[ "$_REPO_FROM_ARG" == true ]] && shift
 
+[[ "$JSON" == "true" ]] && json_preflight
+
 COUNT="${1:-100}"
 MIN_COMMITS="${2:-2}"
 
-[[ "$CSV" == "false" ]] && echo "Analyzing lottery factor for $REPO (last $COUNT merged PRs) …"
+[[ "$CSV" == "false" && "$JSON" == "false" ]] && echo "Analyzing lottery factor for $REPO (last $COUNT merged PRs) …"
 
 # Fetch recent merged PRs with author info
 PR_JSON=$(gh pr list \
@@ -71,6 +76,10 @@ PR_JSON=$(gh pr list \
   --json number,author)
 
 if [[ -z "$PR_JSON" ]] || [[ "$PR_JSON" == "[]" ]]; then
+  if [[ "$JSON" == "true" ]]; then
+    emit_json "lottery-factor" null '{"files":[],"concentrated_count":0}'
+    exit 0
+  fi
   echo "No merged PRs found."
   exit 0
 fi
@@ -81,7 +90,7 @@ trap "rm -f $temp_file" EXIT
 
 total_prs=0
 
-[[ "$CSV" == "false" ]] && echo "Fetching file changes per PR (this may take a moment) …"
+[[ "$CSV" == "false" && "$JSON" == "false" ]] && echo "Fetching file changes per PR (this may take a moment) …"
 
 echo "$PR_JSON" | jq -r '.[] | @base64' | while IFS= read -r pr_b64; do
   pr=$(echo "$pr_b64" | base64 --decode)
@@ -97,6 +106,10 @@ echo "$PR_JSON" | jq -r '.[] | @base64' | while IFS= read -r pr_b64; do
 done
 
 if [[ ! -s "$temp_file" ]]; then
+  if [[ "$JSON" == "true" ]]; then
+    emit_json "lottery-factor" null '{"files":[],"concentrated_count":0}'
+    exit 0
+  fi
   echo "No file changes found."
   exit 0
 fi
@@ -124,7 +137,49 @@ END {
 }' "$temp_file" | sort -t$'\t' -k1,1n -k2,2nr)
 
 if [[ -z "$file_analysis" ]]; then
+  if [[ "$JSON" == "true" ]]; then
+    emit_json "lottery-factor" null '{"files":[],"concentrated_count":0}'
+    exit 0
+  fi
   echo "No files with >= $MIN_COMMITS changes found." >&2
+  exit 0
+fi
+
+# JSON mode: emit one envelope and exit (JSON wins over CSV).
+# top_author_share is a TRUE share: the dominant author's change count for a
+# file divided by that file's total changes, derived from the same raw
+# author/file rows ($temp_file) the table is built from, filtered to the same
+# MIN_COMMITS universe as $file_analysis.
+if [[ "$JSON" == "true" ]]; then
+  files_json=$(awk -F'\t' -v min="$MIN_COMMITS" '
+    {
+      file = $2; author = $1
+      total[file]++
+      ac[file SUBSEP author]++
+      if (ac[file SUBSEP author] > best[file]) {
+        best[file] = ac[file SUBSEP author]
+        top[file] = author
+      }
+    }
+    END {
+      for (f in total) {
+        if (total[f] >= min) {
+          share = best[f] / total[f]
+          printf "%s\t%s\t%.10f\t%d\n", f, top[f], share, total[f]
+        }
+      }
+    }' "$temp_file" \
+    | jq -R -s '
+        [ split("\n")[] | select(length > 0) | split("\t")
+          | { path: .[0],
+              top_author: .[1],
+              top_author_share: (.[2] | tonumber),
+              total_changes: (.[3] | tonumber) } ]
+        | sort_by(-.top_author_share)
+        | { files: .,
+            concentrated_count: ([ .[] | select(.top_author_share > 0.5) ] | length) }
+      ')
+  emit_json "lottery-factor" null "$files_json"
   exit 0
 fi
 

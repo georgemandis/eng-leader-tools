@@ -28,9 +28,14 @@ Arguments:
   days           Lookback window in days (default: 30)
   min_changes    Minimum changes to flag as hotspot (default: 3)
 
+Options:
+  --json         Emit a single JSON envelope (machine-readable) instead of
+                 the human-readable table.
+
 Examples:
   $(basename "$0") my-org/my-repo
   $(basename "$0") my-org/my-repo 60 5
+  $(basename "$0") my-org/my-repo 30 --json
 
 Requires: gh (authenticated), jq
 EOF
@@ -43,15 +48,29 @@ fi
 
 source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 
+# Strip the --json flag out of the positional args (this script otherwise
+# parses purely positionally).
+JSON=false
+args=()
+for arg in "$@"; do
+  case "$arg" in
+    --json) JSON=true ;;
+    *)      args+=("$arg") ;;
+  esac
+done
+set -- "${args[@]}"
+
 resolve_repo "${1:-}" || { usage >&2; exit 1; }
 [[ "$_REPO_FROM_ARG" == true ]] && shift
 
 DAYS="${1:-30}"
 MIN_CHANGES="${2:-3}"
 
+[[ "$JSON" == "true" ]] && json_preflight
+
 CUTOFF=$(get_cutoff_date "$DAYS")
 
-echo "Analyzing code churn for $REPO (last $DAYS days, min $MIN_CHANGES changes) …"
+[[ "$JSON" == "false" ]] && echo "Analyzing code churn for $REPO (last $DAYS days, min $MIN_CHANGES changes) …"
 
 # Fetch merged PRs since cutoff
 PR_JSON=$(gh pr list \
@@ -62,6 +81,10 @@ PR_JSON=$(gh pr list \
   --jq ".[] | select(.mergedAt >= \"$CUTOFF\")")
 
 if [[ -z "$PR_JSON" ]]; then
+  if [[ "$JSON" == "true" ]]; then
+    emit_json "code-churn" "$DAYS" '{"files":[],"hotspot_count":0}'
+    exit 0
+  fi
   echo "No PRs merged in the last $DAYS days."
   exit 0
 fi
@@ -82,11 +105,37 @@ echo "$PR_JSON" | jq -r '.number' | while read -r num; do
 done
 
 if [[ ! -s "$temp_file" ]]; then
+  if [[ "$JSON" == "true" ]]; then
+    emit_json "code-churn" "$DAYS" '{"files":[],"hotspot_count":0}'
+    exit 0
+  fi
   echo "No file changes found in analyzed PRs."
   exit 0
 fi
 
 total_prs=$(echo "$PR_JSON" | jq -s 'length')
+
+hotspots=$(sort "$temp_file" | uniq -c | sort -nr | awk -v min="$MIN_CHANGES" '$1 >= min')
+
+if [[ "$JSON" == "true" ]]; then
+  # Build files array from the (already count-desc sorted) hotspots blob.
+  # NOTE: this script only collects filenames, not per-file authors, so the
+  # `authors` key is intentionally omitted rather than faked.
+  if [[ -n "$hotspots" ]]; then
+    files_json=$(echo "$hotspots" | awk '{ count=$1; $1=""; sub(/^ /,""); print count "\t" $0 }' | jq -R -s '
+      split("\n")
+      | map(select(length > 0))
+      | map(split("\t") | { path: .[1], change_count: (.[0] | tonumber) })')
+    hotspot_count=$(echo "$hotspots" | grep -c '')
+  else
+    files_json='[]'
+    hotspot_count=0
+  fi
+  data=$(jq -n --argjson files "$files_json" --argjson count "$hotspot_count" \
+    '{ files: $files, hotspot_count: $count }')
+  emit_json "code-churn" "$DAYS" "$data"
+  exit 0
+fi
 
 printf "\nCode Churn Analysis:\n"
 printf "────────────────────\n"
@@ -99,8 +148,6 @@ printf "File Hotspots (files changed multiple times):\n"
 printf "──────────────────────────────────────────────\n"
 printf "%-6s %s\n" "Times" "File Path"
 printf "%s\n" "──────────────────────────────────────────────"
-
-hotspots=$(sort "$temp_file" | uniq -c | sort -nr | awk -v min="$MIN_CHANGES" '$1 >= min')
 
 if [[ -n "$hotspots" ]]; then
   echo "$hotspots" | while read -r count filepath; do

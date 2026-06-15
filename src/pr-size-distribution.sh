@@ -28,6 +28,7 @@ Arguments:
 
 Options:
   --csv        Output as CSV instead of formatted table
+  --json       Output as a single JSON envelope (machine-readable)
 
 Examples:
   $(basename "$0") my-org/my-repo
@@ -39,17 +40,19 @@ EOF
 }
 
 CSV=false
+JSON=false
 for arg in "$@"; do
   case "$arg" in
     -h|--help) usage; exit 0 ;;
     --csv) CSV=true ;;
+    --json) JSON=true ;;
   esac
 done
 
-# Strip --csv from positional args
+# Strip --csv/--json from positional args
 args=()
 for arg in "$@"; do
-  [[ "$arg" != "--csv" ]] && args+=("$arg")
+  [[ "$arg" != "--csv" && "$arg" != "--json" ]] && args+=("$arg")
 done
 set -- "${args[@]+"${args[@]}"}"
 
@@ -57,6 +60,8 @@ source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 
 resolve_repo "${1:-}" || { usage >&2; exit 1; }
 [[ "$_REPO_FROM_ARG" == true ]] && shift
+
+[[ "$JSON" == "true" ]] && json_preflight
 
 format_time() {
     local seconds=$1
@@ -92,7 +97,7 @@ categorize_pr_size() {
 
 COUNT="${1:-50}"
 
-if [[ "$CSV" == "false" ]]; then
+if [[ "$CSV" == "false" && "$JSON" == "false" ]]; then
   if [[ -n "${ENG_TEAM:-}" ]]; then
     echo "Analyzing PR size distribution for $REPO (last $COUNT merged PRs, team: $ENG_TEAM) …"
   else
@@ -127,6 +132,22 @@ else
 fi
 
 if [[ -z "$PR_JSON" ]] || [[ "$PR_JSON" == "[]" ]]; then
+  if [[ "$JSON" == "true" ]]; then
+    empty_data=$(jq -n '{
+      sample_count: 0,
+      buckets: [
+        { size: "XS", count: 0, avg_review_seconds: 0 },
+        { size: "S",  count: 0, avg_review_seconds: 0 },
+        { size: "M",  count: 0, avg_review_seconds: 0 },
+        { size: "L",  count: 0, avg_review_seconds: 0 },
+        { size: "XL", count: 0, avg_review_seconds: 0 }
+      ],
+      total_additions: 0,
+      total_deletions: 0
+    }')
+    emit_json "pr-size" null "$empty_data"
+    exit 0
+  fi
   echo "No merged PRs found."
   exit 0
 fi
@@ -145,17 +166,23 @@ total_prs=0
 total_additions=0
 total_deletions=0
 
-if [[ "$CSV" == "false" ]]; then
-  printf "\nPR Size Analysis:\n"
-  printf "─────────────────\n"
-  printf "%-6s %-4s %-5s %-6s %-8s %-8s %-25s %s\n" "PR#" "Size" "Files" "Lines" "Review" "Author" "Title" "URL"
-  printf "%s\n" "──────────────────────────────────────────────────────────────────────────────────────────────────────"
-else
-  echo "PR,Size,Files,Lines,Additions,Deletions,ReviewTime,Author,Title,URL"
+if [[ "$JSON" == "false" ]]; then
+  if [[ "$CSV" == "false" ]]; then
+    printf "\nPR Size Analysis:\n"
+    printf "─────────────────\n"
+    printf "%-6s %-4s %-5s %-6s %-8s %-8s %-25s %s\n" "PR#" "Size" "Files" "Lines" "Review" "Author" "Title" "URL"
+    printf "%s\n" "──────────────────────────────────────────────────────────────────────────────────────────────────────"
+  else
+    echo "PR,Size,Files,Lines,Additions,Deletions,ReviewTime,Author,Title,URL"
+  fi
 fi
 
-# Analyze each PR
-echo "$PR_JSON" | jq -r '.[] | @base64' | while IFS= read -r pr_b64; do
+# Analyze each PR.
+# NOTE: uses process substitution (done < <(...)) rather than a `| while`
+# pipe so the size_counts / size_total_times associative arrays and the
+# total_* counters populated here survive into the parent shell. The JSON
+# summary and the table/CSV summary blocks below depend on this.
+while IFS= read -r pr_b64; do
   pr=$(echo "$pr_b64" | base64 --decode)
 
   num=$(echo "$pr" | jq -r '.number')
@@ -181,16 +208,18 @@ echo "$PR_JSON" | jq -r '.[] | @base64' | while IFS= read -r pr_b64; do
 
   total_lines=$(( additions + deletions ))
 
-  if [[ "$CSV" == "true" ]]; then
-    csv_title=$(echo "$title" | sed 's/"/""/g')
-    printf "%s,%s,%s,%s,%s,%s,%s,%s,\"%s\",%s\n" \
-      "$num" "$size" "$files_count" "$total_lines" "$additions" "$deletions" "$review_time" "$author" "$csv_title" "$url"
-  else
-    # Truncate title and author for display
-    short_title=$(echo "$title" | cut -c1-25)
-    short_author=$(echo "$author" | cut -c1-8)
-    printf "#%-5s %-4s %-5s %-6s %-8s %-8s %-25s %s\n" \
-      "$num" "$size" "$files_count" "$total_lines" "$review_time" "$short_author" "$short_title" "$url"
+  if [[ "$JSON" == "false" ]]; then
+    if [[ "$CSV" == "true" ]]; then
+      csv_title=$(echo "$title" | sed 's/"/""/g')
+      printf "%s,%s,%s,%s,%s,%s,%s,%s,\"%s\",%s\n" \
+        "$num" "$size" "$files_count" "$total_lines" "$additions" "$deletions" "$review_time" "$author" "$csv_title" "$url"
+    else
+      # Truncate title and author for display
+      short_title=$(echo "$title" | cut -c1-25)
+      short_author=$(echo "$author" | cut -c1-8)
+      printf "#%-5s %-4s %-5s %-6s %-8s %-8s %-25s %s\n" \
+        "$num" "$size" "$files_count" "$total_lines" "$review_time" "$short_author" "$short_title" "$url"
+    fi
   fi
 
   # Accumulate stats
@@ -200,7 +229,41 @@ echo "$PR_JSON" | jq -r '.[] | @base64' | while IFS= read -r pr_b64; do
   total_prs=$((total_prs + 1))
   total_additions=$((total_additions + additions))
   total_deletions=$((total_deletions + deletions))
-done
+done < <(echo "$PR_JSON" | jq -r '.[] | @base64')
+
+# JSON mode: emit exactly one envelope and exit before any human-readable output.
+if [[ "$JSON" == "true" ]]; then
+  buckets="[]"
+  for size in XS S M L XL; do
+    count=${size_counts[$size]:-0}
+    if (( count > 0 )); then
+      avg_review_seconds=$(( ${size_total_times[$size]:-0} / count ))
+    else
+      avg_review_seconds=0
+    fi
+    buckets=$(jq -n \
+      --argjson acc "$buckets" \
+      --arg size "$size" \
+      --argjson count "$count" \
+      --argjson avg "$avg_review_seconds" \
+      '$acc + [{ size: $size, count: $count, avg_review_seconds: $avg }]')
+  done
+
+  data=$(jq -n \
+    --argjson sample_count "$total_prs" \
+    --argjson buckets "$buckets" \
+    --argjson total_additions "$total_additions" \
+    --argjson total_deletions "$total_deletions" \
+    '{
+      sample_count: $sample_count,
+      buckets: $buckets,
+      total_additions: $total_additions,
+      total_deletions: $total_deletions
+    }')
+
+  emit_json "pr-size" null "$data"
+  exit 0
+fi
 
 [[ "$CSV" == "true" ]] && exit 0
 

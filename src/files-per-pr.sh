@@ -25,6 +25,7 @@ Arguments:
 
 Options:
   --csv        Output as CSV instead of formatted table
+  --json       Output as a single JSON envelope (machine-readable)
 
 Examples:
   $(basename "$0") my-org/my-repo
@@ -36,17 +37,19 @@ EOF
 }
 
 CSV=false
+JSON=false
 for arg in "$@"; do
   case "$arg" in
     -h|--help) usage; exit 0 ;;
     --csv) CSV=true ;;
+    --json) JSON=true ;;
   esac
 done
 
-# Strip --csv from positional args
+# Strip --csv/--json from positional args
 args=()
 for arg in "$@"; do
-  [[ "$arg" != "--csv" ]] && args+=("$arg")
+  [[ "$arg" != "--csv" && "$arg" != "--json" ]] && args+=("$arg")
 done
 set -- "${args[@]+"${args[@]}"}"
 
@@ -55,12 +58,16 @@ source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 resolve_repo "${1:-}" || { usage >&2; exit 1; }
 [[ "$_REPO_FROM_ARG" == true ]] && shift
 
+[[ "$JSON" == "true" ]] && json_preflight
+
 COUNT="${1:-20}"
 
-if [[ -n "${ENG_TEAM:-}" ]]; then
-  echo "Fetching last $COUNT merged PRs from $REPO (team: $ENG_TEAM) …"
-else
-  echo "Fetching last $COUNT merged PRs from $REPO …"
+if [[ "$JSON" == "false" ]]; then
+  if [[ -n "${ENG_TEAM:-}" ]]; then
+    echo "Fetching last $COUNT merged PRs from $REPO (team: $ENG_TEAM) …"
+  else
+    echo "Fetching last $COUNT merged PRs from $REPO …"
+  fi
 fi
 
 # Fetch recent merged PRs with basic info
@@ -90,22 +97,29 @@ else
 fi
 
 if [[ -z "$PR_JSON" ]] || [[ "$PR_JSON" == "[]" ]]; then
+  if [[ "$JSON" == "true" ]]; then
+    emit_json "files-per-pr" null '{"count":0,"avg_files":0,"median_files":0,"prs":[]}'
+    exit 0
+  fi
   echo "No merged PRs found."
   exit 0
 fi
 
 total_files=0
 total_prs=0
+pr_records=()
 
-if [[ "$CSV" == "true" ]]; then
-  echo "PR,Files,Author,Title,URL"
-else
-  printf "\n%-6s %-6s %-18s %-40s %s\n" "PR#" "Files" "Author" "Title" "URL"
-  printf "%s\n" "──────────────────────────────────────────────────────────────────────────────────────────────────────"
+if [[ "$JSON" == "false" ]]; then
+  if [[ "$CSV" == "true" ]]; then
+    echo "PR,Files,Author,Title,URL"
+  else
+    printf "\n%-6s %-6s %-18s %-40s %s\n" "PR#" "Files" "Author" "Title" "URL"
+    printf "%s\n" "──────────────────────────────────────────────────────────────────────────────────────────────────────"
+  fi
 fi
 
 # Process each PR to get file count
-echo "$PR_JSON" | jq -r '.[] | @base64' | while IFS= read -r pr_b64; do
+while IFS= read -r pr_b64; do
   pr=$(echo "$pr_b64" | base64 --decode)
 
   num=$(echo "$pr" | jq -r '.number')
@@ -116,7 +130,14 @@ echo "$PR_JSON" | jq -r '.[] | @base64' | while IFS= read -r pr_b64; do
   # Fetch files for this PR
   files_count=$(gh api "repos/$REPO/pulls/$num/files" --paginate | jq 'length')
 
-  if [[ "$CSV" == "true" ]]; then
+  if [[ "$JSON" == "true" ]]; then
+    pr_records+=("$(jq -n \
+      --argjson number "$num" \
+      --arg author "$author" \
+      --argjson files_changed "$files_count" \
+      --arg url "$url" \
+      '{number: $number, author: $author, files_changed: $files_changed, url: $url}')")
+  elif [[ "$CSV" == "true" ]]; then
     csv_title=$(echo "$title" | sed 's/"/""/g')
     printf "%s,%s,%s,\"%s\",%s\n" "$num" "$files_count" "$author" "$csv_title" "$url"
   else
@@ -130,7 +151,35 @@ echo "$PR_JSON" | jq -r '.[] | @base64' | while IFS= read -r pr_b64; do
 
   total_files=$((total_files + files_count))
   total_prs=$((total_prs + 1))
-done
+done < <(echo "$PR_JSON" | jq -r '.[] | @base64')
+
+if [[ "$JSON" == "true" ]]; then
+  if (( total_prs > 0 )); then
+    avg_files=$(awk "BEGIN { printf \"%.1f\", $total_files/$total_prs }")
+  else
+    avg_files=0
+  fi
+  prs_json=$(printf '%s\n' "${pr_records[@]+"${pr_records[@]}"}" | jq -s '.')
+  data=$(jq -n \
+    --argjson count "$total_prs" \
+    --argjson avg_files "$avg_files" \
+    --argjson prs "$prs_json" \
+    '{
+      count: $count,
+      avg_files: $avg_files,
+      median_files: (
+        ($prs | map(.files_changed) | sort) as $s |
+        ($s | length) as $n |
+        (if $n == 0 then 0
+         elif ($n % 2) == 1 then $s[($n / 2 | floor)]
+         else (($s[$n/2 - 1] + $s[$n/2]) / 2 | floor)
+         end)
+      ),
+      prs: $prs
+    }')
+  emit_json "files-per-pr" null "$data"
+  exit 0
+fi
 
 if (( total_prs > 0 )) && [[ "$CSV" == "false" ]]; then
   avg_files=$(awk "BEGIN { printf \"%.1f\", $total_files/$total_prs }")

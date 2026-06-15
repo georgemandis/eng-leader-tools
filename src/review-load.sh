@@ -31,23 +31,26 @@ Examples:
 
 Options:
   --csv        Output as CSV instead of formatted table
+  --json       Output as a single JSON envelope (machine-readable)
 
 Requires: gh (authenticated), jq
 EOF
 }
 
 CSV=false
+JSON=false
 for arg in "$@"; do
   case "$arg" in
     -h|--help) usage; exit 0 ;;
     --csv) CSV=true ;;
+    --json) JSON=true ;;
   esac
 done
 
-# Strip --csv from positional args
+# Strip --csv and --json from positional args
 args=()
 for arg in "$@"; do
-  [[ "$arg" != "--csv" ]] && args+=("$arg")
+  [[ "$arg" != "--csv" && "$arg" != "--json" ]] && args+=("$arg")
 done
 set -- "${args[@]+"${args[@]}"}"
 
@@ -56,9 +59,11 @@ source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 resolve_repo "${1:-}" || { usage >&2; exit 1; }
 [[ "$_REPO_FROM_ARG" == true ]] && shift
 
+[[ "$JSON" == "true" ]] && json_preflight
+
 COUNT="${1:-50}"
 
-if [[ "$CSV" == "false" ]]; then
+if [[ "$CSV" == "false" && "$JSON" == "false" ]]; then
   if [[ -n "${ENG_TEAM:-}" ]]; then
     echo "Analyzing review load for $REPO (last $COUNT merged PRs, team: $ENG_TEAM) …"
   else
@@ -102,6 +107,10 @@ else
 fi
 
 if [[ -z "$PR_JSON" ]] || [[ "$PR_JSON" == "[]" ]]; then
+  if [[ "$JSON" == "true" ]]; then
+    emit_json "review-load" null '{"total_reviews":0,"reviewers":[],"top_share":0}'
+    exit 0
+  fi
   echo "No merged PRs found."
   exit 0
 fi
@@ -141,11 +150,37 @@ echo "$PR_JSON" | jq -r '.[] | @base64' | while IFS= read -r pr_b64; do
 done
 
 if [[ ! -s "$temp_reviews" ]]; then
+  if [[ "$JSON" == "true" ]]; then
+    emit_json "review-load" null '{"total_reviews":0,"reviewers":[],"top_share":0}'
+    exit 0
+  fi
   echo "No reviews found in analyzed PRs."
   exit 0
 fi
 
 total_prs=$(wc -l < "$temp_authors" | tr -d ' ')
+
+if [[ "$JSON" == "true" ]]; then
+  # Build the reviewer tally with a dedicated jq pass over the collected
+  # data (temp_reviews survives the per-PR subshell). Each line is
+  # "<login> <state>"; count one review per line.
+  data=$(awk '{print $1}' "$temp_reviews" | jq -R . | jq -s '
+    (length) as $total
+    | (group_by(.) | map({login: .[0], reviews: length})
+       | sort_by(.reviews) | reverse) as $r
+    | {
+        total_reviews: $total,
+        reviewers: ($r | map({
+          login: .login,
+          reviews: .reviews,
+          share: (if $total > 0 then (.reviews / $total) else 0 end)
+        })),
+        top_share: (if ($r | length) > 0 and $total > 0
+                    then ($r[0].reviews / $total) else 0 end)
+      }')
+  emit_json "review-load" null "$data"
+  exit 0
+fi
 
 if [[ "$CSV" == "true" ]]; then
   echo "Reviewer,Total,Approved,Changes Requested,Comments"

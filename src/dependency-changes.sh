@@ -16,7 +16,7 @@ set -euo pipefail
 
 usage() {
   cat <<EOF
-Usage: $(basename "$0") owner/repo [days]
+Usage: $(basename "$0") owner/repo [days] [--json]
 
 Identifies merged PRs that modify dependency files (package.json, go.mod,
 Cargo.toml, requirements.txt, etc.). Flags security updates, measures
@@ -25,6 +25,9 @@ automation rate, and provides a dependency health assessment.
 Arguments:
   owner/repo   GitHub repo (e.g. "octocat/hello-world")
   days         Lookback window in days (default: 90)
+
+Options:
+  --json       Emit a single JSON envelope instead of the table output.
 
 Examples:
   $(basename "$0") my-org/my-repo
@@ -41,14 +44,27 @@ fi
 
 source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 
+# Parse flags; strip recognized flags from positional args.
+JSON=false
+args=()
+for arg in "$@"; do
+  case "$arg" in
+    --json) JSON=true ;;
+    *) args+=("$arg") ;;
+  esac
+done
+set -- "${args[@]}"
+
 resolve_repo "${1:-}" || { usage >&2; exit 1; }
 [[ "$_REPO_FROM_ARG" == true ]] && shift
 
 DAYS="${1:-90}"
 
+[[ "$JSON" == "true" ]] && json_preflight
+
 CUTOFF=$(get_cutoff_date "$DAYS")
 
-echo "Analyzing dependency changes for $REPO (last $DAYS days) …"
+[[ "$JSON" == "false" ]] && echo "Analyzing dependency changes for $REPO (last $DAYS days) …"
 
 # Common dependency files to look for
 dependency_patterns=(
@@ -83,7 +99,57 @@ PR_JSON=$(gh pr list \
   --jq ".[] | select(.mergedAt >= \"$CUTOFF\")")
 
 if [[ -z "$PR_JSON" ]]; then
+  if [[ "$JSON" == "true" ]]; then
+    emit_json "dependency-changes" "$DAYS" '{"manifest_changes":[],"total_dependency_prs":0}'
+    exit 0
+  fi
   echo "No PRs merged in the last $DAYS days."
+  exit 0
+fi
+
+# ── JSON mode ────────────────────────────────────────────────────────
+# Compute the JSON data with a dedicated pass rather than relying on the
+# subshell display loops below. Uses the same manifest-matching logic
+# (dependency_patterns + jq test()).
+if [[ "$JSON" == "true" ]]; then
+  # Build a jq array of the dependency patterns.
+  patterns_json=$(printf '%s\n' "${dependency_patterns[@]}" | jq -R . | jq -s .)
+
+  # Per-manifest-file change counts (one count per PR that touched that file)
+  # and total number of PRs touching any dependency manifest.
+  manifest_counts_file=$(mktemp)
+  total_dep_prs=0
+
+  while IFS= read -r pr_b64; do
+    [[ -z "$pr_b64" ]] && continue
+    pr=$(echo "$pr_b64" | base64 --decode)
+    num=$(echo "$pr" | jq -r '.number')
+
+    files_json=$(gh api "repos/$REPO/pulls/$num/files" --paginate)
+
+    # Matched manifest filenames for this PR (deduped), one per line.
+    matched=$(echo "$files_json" | jq -r --argjson patterns "$patterns_json" '
+      [ .[] | .filename as $f
+        | select(any($patterns[]; . as $p | $f | test($p))) | $f ]
+      | unique | .[]')
+
+    if [[ -n "$matched" ]]; then
+      total_dep_prs=$((total_dep_prs + 1))
+      printf '%s\n' "$matched" >> "$manifest_counts_file"
+    fi
+  done < <(echo "$PR_JSON" | jq -r '@base64')
+
+  manifest_changes=$(sort "$manifest_counts_file" | uniq -c | jq -R '
+      ltrimstr(" ") | gsub("^ +";"") | capture("^(?<count>[0-9]+) +(?<file>.*)$")
+      | {file: .file, change_count: (.count | tonumber)}' | jq -s 'sort_by(-.change_count)')
+  rm -f "$manifest_counts_file"
+
+  data=$(jq -n \
+    --argjson manifest_changes "$manifest_changes" \
+    --argjson total "$total_dep_prs" \
+    '{manifest_changes: $manifest_changes, total_dependency_prs: $total}')
+
+  emit_json "dependency-changes" "$DAYS" "$data"
   exit 0
 fi
 

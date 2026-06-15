@@ -26,6 +26,7 @@ Arguments:
 
 Options:
   --csv        Output as CSV instead of formatted table
+  --json       Output as a single JSON envelope (machine-readable)
 
 Examples:
   $(basename "$0") my-org/my-repo
@@ -37,17 +38,19 @@ EOF
 }
 
 CSV=false
+JSON=false
 for arg in "$@"; do
   case "$arg" in
     -h|--help) usage; exit 0 ;;
     --csv) CSV=true ;;
+    --json) JSON=true ;;
   esac
 done
 
-# Strip --csv from positional args
+# Strip --csv / --json from positional args
 args=()
 for arg in "$@"; do
-  [[ "$arg" != "--csv" ]] && args+=("$arg")
+  [[ "$arg" != "--csv" && "$arg" != "--json" ]] && args+=("$arg")
 done
 set -- "${args[@]+"${args[@]}"}"
 
@@ -55,6 +58,8 @@ source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 
 resolve_repo "${1:-}" || { usage >&2; exit 1; }
 [[ "$_REPO_FROM_ARG" == true ]] && shift
+
+[[ "$JSON" == "true" ]] && json_preflight
 
 # Function to format time in human-readable units
 format_time_diff() {
@@ -73,7 +78,7 @@ DAYS="${1:-90}"
 
 CUTOFF=$(get_cutoff_date "$DAYS")
 
-[[ "$CSV" == "false" ]] && echo "Analyzing deployment frequency for $REPO (last $DAYS days) …"
+[[ "$CSV" == "false" && "$JSON" == "false" ]] && echo "Analyzing deployment frequency for $REPO (last $DAYS days) …"
 
 # Fetch releases/tags since cutoff
 RELEASES_JSON=$(gh api "repos/$REPO/releases" --paginate | \
@@ -86,7 +91,7 @@ TAGS_JSON=$(gh api "repos/$REPO/tags" --paginate | \
 release_count=$(echo "$RELEASES_JSON" | jq 'length')
 tag_count=$(echo "$TAGS_JSON" | jq 'length')
 
-if [[ "$CSV" == "false" ]]; then
+if [[ "$CSV" == "false" && "$JSON" == "false" ]]; then
   printf "\nDeployment Activity:\n"
   printf "────────────────────\n"
   printf "• Releases in last %d days: %d\n" "$DAYS" "$release_count"
@@ -109,7 +114,35 @@ fi
 deployment_count=$(echo "$deployments" | jq 'length')
 
 if (( deployment_count == 0 )); then
+  if [[ "$JSON" == "true" ]]; then
+    data=$(jq -n --argjson window "$DAYS" \
+      '{ window_days: $window, deploy_count: 0, deploys_per_day: 0, series: [] }')
+    emit_json "deploy-frequency" "$DAYS" "$data"
+    exit 0
+  fi
   echo "• No deployments found in the specified period"
+  exit 0
+fi
+
+# JSON output wins over CSV: emit one envelope and exit before any table/CSV output.
+if [[ "$JSON" == "true" ]]; then
+  data=$(echo "$deployments" | jq \
+    --arg datefield "$date_field" \
+    --argjson window "$DAYS" \
+    '
+    ( [ .[] | getpath($datefield | ltrimstr(".") | split(".")) | .[0:10] ]
+      | group_by(.)
+      | map({ date: .[0], count: length })
+      | sort_by(.date) ) as $series
+    | ($series | map(.count) | add // 0) as $count
+    | {
+        window_days: $window,
+        deploy_count: $count,
+        deploys_per_day: (if $window == 0 then 0 else (($count / $window) * 100 | round / 100) end),
+        series: $series
+      }
+    ')
+  emit_json "deploy-frequency" "$DAYS" "$data"
   exit 0
 fi
 

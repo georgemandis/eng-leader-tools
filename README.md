@@ -41,6 +41,19 @@ eng --help
 eng lead-time --help
 ```
 
+### JSON output
+
+Most metric commands support `--json` for machine-readable output:
+
+```bash
+eng lead-time my-org/my-repo 30 --json
+```
+
+Output is a single JSON envelope (`metric`, `repo`, `team`, `window_days`,
+`generated_at`, `data`). Errors are emitted as `{ "error", "code" }` with a
+non-zero exit. See [`docs/json-contract.md`](docs/json-contract.md) for the
+full per-metric contract.
+
 ### Auto-detection
 
 When you run a command inside a git repo with a GitHub remote, `eng` automatically detects the `owner/repo` — no need to type it:

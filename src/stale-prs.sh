@@ -30,23 +30,26 @@ Examples:
 
 Options:
   --csv        Output as CSV instead of formatted table
+  --json       Output as a single JSON envelope (machine-readable)
 
 Requires: gh (authenticated), jq
 EOF
 }
 
 CSV=false
+JSON=false
 for arg in "$@"; do
   case "$arg" in
     -h|--help) usage; exit 0 ;;
     --csv) CSV=true ;;
+    --json) JSON=true ;;
   esac
 done
 
-# Strip --csv from positional args
+# Strip --csv / --json from positional args
 args=()
 for arg in "$@"; do
-  [[ "$arg" != "--csv" ]] && args+=("$arg")
+  [[ "$arg" != "--csv" && "$arg" != "--json" ]] && args+=("$arg")
 done
 set -- "${args[@]+"${args[@]}"}"
 
@@ -54,11 +57,12 @@ source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 
 resolve_repo "${1:-}" || { usage >&2; exit 1; }
 [[ "$_REPO_FROM_ARG" == true ]] && shift
+[[ "$JSON" == "true" ]] && json_preflight
 
 LIMIT="${1:-100}"
 NOW=$(date +%s)
 
-if [[ "$CSV" == "false" ]]; then
+if [[ "$CSV" == "false" && "$JSON" == "false" ]]; then
   if [[ -n "${ENG_TEAM:-}" ]]; then
     echo "Fetching open PRs for $REPO (team: $ENG_TEAM) …"
   else
@@ -92,6 +96,22 @@ else
 fi
 
 if [[ -z "$PR_JSON" ]] || [[ "$PR_JSON" == "[]" ]]; then
+  if [[ "$JSON" == "true" ]]; then
+    empty_data=$(jq -n '{
+      open_count: 0,
+      buckets: [
+        { label: "<1d",  count: 0 },
+        { label: "1-3d", count: 0 },
+        { label: "3-7d", count: 0 },
+        { label: "1-2w", count: 0 },
+        { label: "2-4w", count: 0 },
+        { label: "30d+", count: 0 }
+      ],
+      prs: []
+    }')
+    emit_json "stale-prs" null "$empty_data"
+    exit 0
+  fi
   echo "No open PRs found."
   exit 0
 fi
@@ -103,6 +123,7 @@ bucket_7d=()
 bucket_14d=()
 bucket_30d=()
 bucket_old=()
+pr_records=()
 
 [[ "$CSV" == "true" ]] && echo "PR,Author,Age (days),Draft,Title,URL"
 
@@ -119,6 +140,20 @@ while IFS= read -r pr_b64; do
 
   ts_created=$(parse_timestamp "$created")
   age_days=$(( (NOW - ts_created) / 86400 ))
+
+  if [[ "$JSON" == "true" ]]; then
+    record=$(echo "$pr" | jq -c \
+      --argjson age "$age_days" \
+      '{
+        number: .number,
+        author: .author.login,
+        age_days: $age,
+        is_draft: .isDraft,
+        title: .title,
+        url: .url
+      }')
+    pr_records+=("$record")
+  fi
 
   draft_marker=""
   if [[ "$is_draft" == "true" ]]; then
@@ -153,6 +188,34 @@ while IFS= read -r pr_b64; do
 done < <(echo "$PR_JSON" | jq -r '.[] | @base64')
 
 [[ "$CSV" == "true" ]] && exit 0
+
+if [[ "$JSON" == "true" ]]; then
+  prs_json=$(printf '%s\n' "${pr_records[@]+"${pr_records[@]}"}" | jq -s '.')
+  open_count=$(echo "$PR_JSON" | jq 'length')
+  data=$(jq -n \
+    --argjson open_count "$open_count" \
+    --argjson b1d "${#bucket_1d[@]}" \
+    --argjson b3d "${#bucket_3d[@]}" \
+    --argjson b7d "${#bucket_7d[@]}" \
+    --argjson b14d "${#bucket_14d[@]}" \
+    --argjson b30d "${#bucket_30d[@]}" \
+    --argjson bold "${#bucket_old[@]}" \
+    --argjson prs "$prs_json" \
+    '{
+      open_count: $open_count,
+      buckets: [
+        { label: "<1d",  count: $b1d },
+        { label: "1-3d", count: $b3d },
+        { label: "3-7d", count: $b7d },
+        { label: "1-2w", count: $b14d },
+        { label: "2-4w", count: $b30d },
+        { label: "30d+", count: $bold }
+      ],
+      prs: $prs
+    }')
+  emit_json "stale-prs" null "$data"
+  exit 0
+fi
 
 total=$(echo "$PR_JSON" | jq 'length')
 

@@ -27,6 +27,7 @@ Arguments:
 
 Options:
   --csv        Output as CSV instead of formatted table
+  --json       Output as a single JSON envelope (machine-readable)
 
 Examples:
   $(basename "$0") my-org/my-repo
@@ -38,17 +39,19 @@ EOF
 }
 
 CSV=false
+JSON=false
 for arg in "$@"; do
   case "$arg" in
     -h|--help) usage; exit 0 ;;
     --csv) CSV=true ;;
+    --json) JSON=true ;;
   esac
 done
 
-# Strip --csv from positional args
+# Strip --csv / --json from positional args
 args=()
 for arg in "$@"; do
-  [[ "$arg" != "--csv" ]] && args+=("$arg")
+  [[ "$arg" != "--csv" && "$arg" != "--json" ]] && args+=("$arg")
 done
 set -- "${args[@]+"${args[@]}"}"
 
@@ -56,6 +59,8 @@ source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 
 resolve_repo "${1:-}" || { usage >&2; exit 1; }
 [[ "$_REPO_FROM_ARG" == true ]] && shift
+
+[[ "$JSON" == "true" ]] && json_preflight
 
 # Function to format time in human-readable units
 format_time() {
@@ -77,7 +82,7 @@ format_time() {
 
 COUNT="${1:-30}"
 
-if [[ "$CSV" == "false" ]]; then
+if [[ "$CSV" == "false" && "$JSON" == "false" ]]; then
   if [[ -n "${ENG_TEAM:-}" ]]; then
     echo "Analyzing PR review times for $REPO (last $COUNT merged PRs, team: $ENG_TEAM) …"
   else
@@ -112,6 +117,10 @@ else
 fi
 
 if [[ -z "$PR_JSON" ]] || [[ "$PR_JSON" == "[]" ]]; then
+  if [[ "$JSON" == "true" ]]; then
+    emit_json "review-time" "$COUNT" '{"count":0,"avg_time_to_first_review_seconds":0,"avg_time_to_merge_seconds":0,"prs":[]}'
+    exit 0
+  fi
   echo "No merged PRs found."
   exit 0
 fi
@@ -121,7 +130,9 @@ total_merge_time=0
 total_prs_with_reviews=0
 total_prs=0
 
-if [[ "$CSV" == "false" ]]; then
+if [[ "$JSON" == "true" ]]; then
+  : # collect into pr_records below; no header
+elif [[ "$CSV" == "false" ]]; then
   printf "\nPR Review Analysis:\n"
   printf "──────────────────\n"
   printf "%-6s %-8s %-8s %-8s %-18s %s\n" "PR#" "1st Rev" "Merge" "Reviews" "Author" "URL"
@@ -130,8 +141,10 @@ else
   echo "PR,FirstReview,MergeTime,Reviews,Author,URL"
 fi
 
+pr_records=()
+
 # Process each PR
-echo "$PR_JSON" | jq -r '.[] | @base64' | while IFS= read -r pr_b64; do
+while IFS= read -r pr_b64; do
   pr=$(echo "$pr_b64" | base64 --decode)
 
   num=$(echo "$pr" | jq -r '.number')
@@ -160,9 +173,23 @@ echo "$PR_JSON" | jq -r '.[] | @base64' | while IFS= read -r pr_b64; do
     total_prs_with_reviews=$((total_prs_with_reviews + 1))
   else
     first_review_time="N/A"
+    first_review_delta=""
   fi
 
-  if [[ "$CSV" == "true" ]]; then
+  if [[ "$JSON" == "true" ]]; then
+    if [[ -n "$first_review_delta" ]]; then
+      first_review_arg="$first_review_delta"
+    else
+      first_review_arg="null"
+    fi
+    pr_records+=("$(jq -n \
+      --argjson number "$num" \
+      --arg author "$author" \
+      --argjson first_review "$first_review_arg" \
+      --argjson merge "$merge_delta" \
+      --arg url "$url" \
+      '{number:$number, author:$author, time_to_first_review_seconds:$first_review, time_to_merge_seconds:$merge, url:$url}')")
+  elif [[ "$CSV" == "true" ]]; then
     printf "%s,%s,%s,%s,%s,%s\n" "$num" "$first_review_time" "$merge_time" "$review_count" "$author" "$url"
   else
     printf "#%-5s %-8s %-8s %-8s %-18s %s\n" "$num" "$first_review_time" "$merge_time" "$review_count" "$author" "$url"
@@ -170,7 +197,23 @@ echo "$PR_JSON" | jq -r '.[] | @base64' | while IFS= read -r pr_b64; do
 
   total_merge_time=$((total_merge_time + merge_delta))
   total_prs=$((total_prs + 1))
-done
+done < <(echo "$PR_JSON" | jq -r '.[] | @base64')
+
+if [[ "$JSON" == "true" ]]; then
+  avg_first_review=0
+  (( total_prs_with_reviews > 0 )) && avg_first_review=$(( total_first_review_time / total_prs_with_reviews ))
+  avg_merge=0
+  (( total_prs > 0 )) && avg_merge=$(( total_merge_time / total_prs ))
+  prs_array=$(printf '%s\n' "${pr_records[@]+"${pr_records[@]}"}" | jq -s '.')
+  data=$(jq -n \
+    --argjson count "$total_prs" \
+    --argjson avg_first "$avg_first_review" \
+    --argjson avg_merge "$avg_merge" \
+    --argjson prs "$prs_array" \
+    '{count:$count, avg_time_to_first_review_seconds:$avg_first, avg_time_to_merge_seconds:$avg_merge, prs:$prs}')
+  emit_json "review-time" "$COUNT" "$data"
+  exit 0
+fi
 
 [[ "$CSV" == "true" ]] && exit 0
 
