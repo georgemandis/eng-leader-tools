@@ -20,6 +20,7 @@ Usage: $(basename "$0") owner/repo [count]
 
 Analyzes PR review times: time to first review, time to merge, review
 coverage, and responsiveness. Makes one API call per PR for review data.
+The table shows a truncated PR title; --csv and --json include the full title.
 
 Arguments:
   owner/repo   GitHub repo (e.g. "octocat/hello-world")
@@ -80,6 +81,20 @@ format_time() {
     fi
 }
 
+# Width for the Title column in the formatted table; longer titles are
+# truncated with an ellipsis. CSV/JSON output always show the full title.
+TITLE_WIDTH=40
+
+# Truncate a string to TITLE_WIDTH chars, appending "…" if it was cut.
+truncate_title() {
+    local title=$1
+    if (( ${#title} > TITLE_WIDTH )); then
+        printf "%s…" "${title:0:TITLE_WIDTH-1}"
+    else
+        printf "%s" "$title"
+    fi
+}
+
 COUNT="${1:-30}"
 
 if [[ "$CSV" == "false" && "$JSON" == "false" ]]; then
@@ -104,7 +119,7 @@ if [[ -n "${ENG_TEAM_MEMBERS:-}" ]]; then
       --state merged \
       --limit "$_per_member_limit" \
       --author "$_member" \
-      --json number,createdAt,mergedAt,author,url 2>/dev/null || echo "[]")
+      --json number,title,createdAt,mergedAt,author,url 2>/dev/null || echo "[]")
     _all_prs=$(jq -s 'add' <(echo "$_all_prs") <(echo "$_member_prs"))
   done
   PR_JSON=$(echo "$_all_prs" | jq --argjson n "$COUNT" 'unique_by(.number) | sort_by(.mergedAt) | reverse | .[:$n]')
@@ -113,7 +128,7 @@ else
     --repo "$REPO" \
     --state merged \
     --limit "$COUNT" \
-    --json number,createdAt,mergedAt,author,url)
+    --json number,title,createdAt,mergedAt,author,url)
 fi
 
 if [[ -z "$PR_JSON" ]] || [[ "$PR_JSON" == "[]" ]]; then
@@ -135,10 +150,10 @@ if [[ "$JSON" == "true" ]]; then
 elif [[ "$CSV" == "false" ]]; then
   printf "\nPR Review Analysis:\n"
   printf "──────────────────\n"
-  printf "%-6s %-8s %-8s %-8s %-18s %s\n" "PR#" "1st Rev" "Merge" "Reviews" "Author" "URL"
+  printf "%-6s %-${TITLE_WIDTH}s %-8s %-8s %-8s %-18s %s\n" "PR#" "Title" "1st Rev" "Merge" "Reviews" "Author" "URL"
   printf "%s\n" "──────────────────────────────────────────────────────────────────────────────────────"
 else
-  echo "PR,FirstReview,MergeTime,Reviews,Author,URL"
+  echo "PR,Title,FirstReview,MergeTime,Reviews,Author,URL"
 fi
 
 pr_records=()
@@ -148,6 +163,7 @@ while IFS= read -r pr_b64; do
   pr=$(echo "$pr_b64" | base64 --decode)
 
   num=$(echo "$pr" | jq -r '.number')
+  title=$(echo "$pr" | jq -r '.title')
   created=$(echo "$pr" | jq -r '.createdAt')
   merged=$(echo "$pr" | jq -r '.mergedAt')
   author=$(echo "$pr" | jq -r '.author.login')
@@ -184,15 +200,17 @@ while IFS= read -r pr_b64; do
     fi
     pr_records+=("$(jq -n \
       --argjson number "$num" \
+      --arg title "$title" \
       --arg author "$author" \
       --argjson first_review "$first_review_arg" \
       --argjson merge "$merge_delta" \
       --arg url "$url" \
-      '{number:$number, author:$author, time_to_first_review_seconds:$first_review, time_to_merge_seconds:$merge, url:$url}')")
+      '{number:$number, title:$title, author:$author, time_to_first_review_seconds:$first_review, time_to_merge_seconds:$merge, url:$url}')")
   elif [[ "$CSV" == "true" ]]; then
-    printf "%s,%s,%s,%s,%s,%s\n" "$num" "$first_review_time" "$merge_time" "$review_count" "$author" "$url"
+    csv_title=$(echo "$title" | sed 's/"/""/g')
+    printf '%s,"%s",%s,%s,%s,%s,%s\n' "$num" "$csv_title" "$first_review_time" "$merge_time" "$review_count" "$author" "$url"
   else
-    printf "#%-5s %-8s %-8s %-8s %-18s %s\n" "$num" "$first_review_time" "$merge_time" "$review_count" "$author" "$url"
+    printf "#%-5s %-${TITLE_WIDTH}s %-8s %-8s %-8s %-18s %s\n" "$num" "$(truncate_title "$title")" "$first_review_time" "$merge_time" "$review_count" "$author" "$url"
   fi
 
   total_merge_time=$((total_merge_time + merge_delta))

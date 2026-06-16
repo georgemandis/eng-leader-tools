@@ -51,7 +51,7 @@ Codes: `AUTH`, `NOT_FOUND`, `RATE_LIMIT`, `BAD_ARGS`, `DEP_MISSING`, `UNKNOWN`.
 | Command | `metric` | `window_days` | `data` fields |
 |---------|----------|---------------|---------------|
 | `lead-time` | `lead-time` | days arg | `count`, `avg_seconds`, `prs[]` (`number`, `author`, `lead_time_seconds`, `created_at`, `merged_at`, `url`) |
-| `review-time` | `review-time` | PR count | `count`, `avg_time_to_first_review_seconds`, `avg_time_to_merge_seconds`, `prs[]` (`number`, `author`, `time_to_first_review_seconds` (null if unreviewed), `time_to_merge_seconds`, `url`) |
+| `review-time` | `review-time` | PR count | `count`, `avg_time_to_first_review_seconds`, `avg_time_to_merge_seconds`, `prs[]` (`number`, `title`, `author`, `time_to_first_review_seconds` (null if unreviewed), `time_to_merge_seconds`, `url`) |
 | `pr-size` | `pr-size` | null | `sample_count`, `buckets[]` (`size`, `count`, `avg_review_seconds`), `total_additions`, `total_deletions` |
 | `stale-prs` | `stale-prs` | null | `open_count`, `buckets[]` (`label`, `count`), `prs[]` (`number`, `author`, `age_days`, `is_draft`, `title`, `url`) |
 | `files-per-pr` | `files-per-pr` | null | `count`, `avg_files`, `median_files`, `prs[]` (`number`, `author`, `files_changed`, `url`) |
