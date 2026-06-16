@@ -991,6 +991,12 @@ git commit -m "feat(mcp): register_agent dispatch and interactive install flow"
 
 In `eng`, the dispatch `case "${1:-}" in` block (starts line 240) has a `*)` catch-all at line 254. Add an `mcp)` arm immediately before `*)`:
 
+**IMPORTANT:** `eng` has a global pre-processing loop near the top that strips
+`--dry-run` (and `--team`) from `$@` *before* dispatch, capturing it in
+`_dry_run`. So the `install)` arm must RE-INJECT `--dry-run` to the installer
+when `_dry_run` is true — otherwise `eng mcp install --dry-run` would silently
+perform a real install. The arm below handles this.
+
 ```bash
   mcp)
     shift
@@ -999,6 +1005,11 @@ In `eng`, the dispatch `case "${1:-}" in` block (starts line 240) has a `*)` cat
       install)
         shift 2>/dev/null || true
         export ENG_MCP_SERVER="${SCRIPT_DIR}/mcp/index.ts"
+        # --dry-run is stripped by eng's global pre-processing; re-add it so
+        # the installer sees it and only prints intended actions.
+        if [[ "$_dry_run" == "true" ]]; then
+          exec bash "${SCRIPT_DIR}/src/mcp-install.sh" "$@" --dry-run
+        fi
         exec bash "${SCRIPT_DIR}/src/mcp-install.sh" "$@"
         ;;
       -h|--help|help|"")
