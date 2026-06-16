@@ -67,6 +67,16 @@ eng stale-prs              # works for all commands
 
 You can also set `ENG_REPO` and `ENG_OWNER` environment variables to override auto-detection.
 
+### MCP Server (use from AI agents)
+
+`engleader.tools` ships an MCP server so AI agents can call these metrics directly. Install it into your agents with:
+
+```bash
+eng mcp install
+```
+
+This detects Claude Code, Cursor, VS Code, Gemini, Codex, Windsurf, and OpenCode, asks which to set up, and registers the server. See [`mcp/README.md`](mcp/README.md) for details. Requires [Bun](https://bun.sh).
+
 ### Team Filtering
 
 Filter any supported command to a specific GitHub Team's members:
