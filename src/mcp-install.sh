@@ -32,6 +32,24 @@ detect_agents() {
   return 0
 }
 
+# merge_json_config <config_path> <server_path>
+#   Backs up the file, then idempotently adds an `engleader` MCP entry under
+#   the standard `.mcpServers` key. Uses bun to run the server.
+merge_json_config() {
+  local cfg="$1" server="$2"
+  local ts; ts="$(date -u +%Y%m%d%H%M%S)"
+  cp "$cfg" "${cfg}.bak-${ts}"
+
+  # Treat an empty file as an empty object.
+  local current; current="$(cat "$cfg")"
+  [[ -z "${current// }" ]] && current="{}"
+
+  echo "$current" | jq \
+    --arg path "$server" \
+    '.mcpServers.engleader = { command: "bun", args: ["run", $path] }' \
+    > "${cfg}.tmp" && mv "${cfg}.tmp" "$cfg"
+}
+
 # main() runs only when invoked directly, not when sourced for tests.
 main() {
   echo "eng mcp install — coming together across tasks 6-9" >&2

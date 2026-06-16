@@ -26,5 +26,25 @@ OUT2="$(HOME="$TMP" PATH="$fakebin:$PATH" detect_agents)"
 ok "does not detect windsurf when absent" '[[ "$OUT2" != *"windsurf|"* ]]'
 
 rm -rf "$TMP"
+
+# --- JSON merge ---
+JTMP="$(mktemp -d)"
+cfg="$JTMP/mcp.json"
+echo '{"mcpServers":{"existing":{"command":"foo"}}}' > "$cfg"
+
+merge_json_config "$cfg" "/abs/mcp/index.ts" >/dev/null
+
+ok "adds engleader entry" 'grep -q "engleader" "$cfg"'
+ok "preserves existing entry" 'grep -q "existing" "$cfg"'
+ok "entry uses bun run with the server path" 'grep -q "/abs/mcp/index.ts" "$cfg"'
+ok "creates a timestamped backup" 'ls "$cfg".bak-* >/dev/null 2>&1'
+
+# Idempotency: second merge does not add a duplicate.
+merge_json_config "$cfg" "/abs/mcp/index.ts" >/dev/null
+count="$(grep -o engleader "$cfg" | wc -l | tr -d ' ')"
+ok "idempotent — engleader appears once" '[[ "$count" == "1" ]]'
+
+rm -rf "$JTMP"
+
 echo "----"; echo "$PASS passed, $FAIL failed"
 [[ "$FAIL" -eq 0 ]]
