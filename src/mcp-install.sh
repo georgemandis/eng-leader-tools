@@ -50,9 +50,117 @@ merge_json_config() {
     > "${cfg}.tmp" && mv "${cfg}.tmp" "$cfg"
 }
 
-# main() runs only when invoked directly, not when sourced for tests.
+# register_agent <"name|kind|path"> <server_path>
+#   Honors ENG_MCP_DRY_RUN=1 (print intended action, change nothing).
+register_agent() {
+  local entry="$1" server="$2"
+  local name kind path
+  IFS='|' read -r name kind path <<<"$entry"
+
+  if [[ -n "${ENG_MCP_DRY_RUN:-}" ]]; then
+    if [[ "$kind" == "cli" ]]; then
+      echo "[dry-run] $name: claude mcp add engleader -s user -- bun run $server"
+    else
+      echo "[dry-run] $name: merge engleader into $path"
+    fi
+    return 0
+  fi
+
+  case "$kind" in
+    cli)
+      claude mcp add engleader -s user -- bun run "$server" \
+        && echo "✓ $name registered" \
+        || echo "✗ $name: claude mcp add failed" >&2
+      ;;
+    json)
+      merge_json_config "$path" "$server" \
+        && echo "✓ $name updated ($path)" \
+        || echo "✗ $name: failed to update $path" >&2
+      ;;
+    *)
+      echo "✗ $name: unknown registration kind '$kind', skipped" >&2
+      ;;
+  esac
+}
+
+# Print the planned action for each detected agent and prompt for selection.
 main() {
-  echo "eng mcp install — coming together across tasks 6-9" >&2
+  local server; server="$(mcp_server_path)"
+
+  if ! command -v bun >/dev/null 2>&1; then
+    echo "Warning: 'bun' is not installed — the server needs it to run." >&2
+    echo "Install Bun from https://bun.sh, then re-run 'eng mcp install'." >&2
+    echo >&2
+  fi
+
+  local dry_run="" target_agent="" install_all=""
+  for arg in "$@"; do
+    case "$arg" in
+      --dry-run) dry_run=1 ;;
+      --all) install_all=1 ;;
+      --agent) ;; # value handled below
+      --agent=*) target_agent="${arg#--agent=}" ;;
+      -h|--help)
+        echo "Usage: eng mcp install [--all] [--agent <name>] [--dry-run]"
+        echo "Agents: claude-code cursor vscode gemini codex windsurf opencode"
+        return 0 ;;
+    esac
+  done
+  # support `--agent <name>` (space form)
+  local prev=""
+  for arg in "$@"; do
+    [[ "$prev" == "--agent" ]] && target_agent="$arg"
+    prev="$arg"
+  done
+  [[ -n "$dry_run" ]] && export ENG_MCP_DRY_RUN=1
+
+  local detected; detected="$(detect_agents)"
+  if [[ -z "$detected" ]]; then
+    echo "No supported agents detected. Supported: claude-code cursor vscode gemini codex windsurf opencode" >&2
+    return 1
+  fi
+
+  echo "Detected agents:"
+  while IFS='|' read -r name kind path; do
+    [[ -z "$name" ]] && continue
+    echo "  - $name${path:+  ($path)}"
+  done <<<"$detected"
+  echo
+
+  # Non-interactive paths
+  if [[ -n "$target_agent" ]]; then
+    local entry; entry="$(echo "$detected" | grep "^${target_agent}|" || true)"
+    [[ -z "$entry" ]] && { echo "Agent '$target_agent' not detected." >&2; return 1; }
+    register_agent "$entry" "$server"
+    return 0
+  fi
+  if [[ -n "$install_all" ]]; then
+    while IFS= read -r entry; do
+      [[ -z "$entry" ]] && continue
+      register_agent "$entry" "$server"
+    done <<<"$detected"
+    return 0
+  fi
+
+  # Interactive
+  printf "Install into which? [a]ll / [c]hoose / [q]uit: "
+  read -r choice
+  case "$choice" in
+    a|A)
+      while IFS= read -r entry; do
+        [[ -z "$entry" ]] && continue
+        register_agent "$entry" "$server"
+      done <<<"$detected" ;;
+    c|C)
+      while IFS='|' read -r name kind path; do
+        [[ -z "$name" ]] && continue
+        printf "Install into %s? [y/N]: " "$name"
+        read -r yn
+        [[ "$yn" == "y" || "$yn" == "Y" ]] && register_agent "$name|$kind|$path" "$server"
+      done <<<"$detected" ;;
+    *)
+      echo "Aborted." ;;
+  esac
 }
 
 if [[ -z "${ENG_MCP_LIB:-}" ]]; then

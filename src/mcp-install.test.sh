@@ -46,5 +46,33 @@ ok "idempotent — engleader appears once" '[[ "$count" == "1" ]]'
 
 rm -rf "$JTMP"
 
+# --- register_agent dispatch ---
+RTMP="$(mktemp -d)"
+# Fake `claude` that records its args.
+fb="$RTMP/bin"; mkdir -p "$fb"
+cat > "$fb/claude" <<'EOF'
+#!/bin/sh
+echo "$@" >> "$CLAUDE_LOG"
+EOF
+chmod +x "$fb/claude"
+
+CLAUDE_LOG="$RTMP/claude.log" PATH="$fb:$PATH" \
+  register_agent "claude-code|cli|" "/abs/mcp/index.ts" >/dev/null
+ok "cli agent invokes claude mcp add" 'grep -q "mcp add engleader" "$RTMP/claude.log"'
+ok "cli registration references bun run + path" 'grep -q "bun run /abs/mcp/index.ts" "$RTMP/claude.log"'
+
+# json agent path goes through merge_json_config
+jcfg="$RTMP/cursor.json"; echo '{}' > "$jcfg"
+register_agent "cursor|json|$jcfg" "/abs/mcp/index.ts" >/dev/null
+ok "json agent merges config" 'grep -q engleader "$jcfg"'
+
+# --- dry-run writes nothing ---
+dcfg="$RTMP/dry.json"; echo '{}' > "$dcfg"
+ENG_MCP_DRY_RUN=1 register_agent "cursor|json|$dcfg" "/abs/mcp/index.ts" >/dev/null
+ok "dry-run leaves json untouched" '! grep -q engleader "$dcfg"'
+ok "dry-run creates no backup" '! ls "$dcfg".bak-* >/dev/null 2>&1'
+
+rm -rf "$RTMP"
+
 echo "----"; echo "$PASS passed, $FAIL failed"
 [[ "$FAIL" -eq 0 ]]
