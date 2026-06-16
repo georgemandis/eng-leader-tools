@@ -132,6 +132,9 @@ Discussion:
   pull-discussion        Pull full PR discussion as text
   analyze-discussion     Pipe discussion into LLM for summarization
 
+Setup:
+  mcp                    Install the MCP server into your AI agents
+
 Options:
   -h, --help             Show this help
   -v, --version          Show version
@@ -148,7 +151,7 @@ EOF
 
 generate_completions() {
   local shell="$1"
-  local cmds="lead-time lead-time-user change-failure-rate deploy-frequency review-time pr-size files-per-pr files-per-pr-live stale-prs quick-reviews review-load code-churn contributor-patterns lottery-factor dependency-changes contributions pull-discussion analyze-discussion"
+  local cmds="lead-time lead-time-user change-failure-rate deploy-frequency review-time pr-size files-per-pr files-per-pr-live stale-prs quick-reviews review-load code-churn contributor-patterns lottery-factor dependency-changes contributions pull-discussion analyze-discussion mcp"
 
   case "$shell" in
     bash)
@@ -188,6 +191,7 @@ _eng() {
     'contributions:User review/comment activity'
     'pull-discussion:Full PR discussion text'
     'analyze-discussion:LLM discussion summary'
+    'mcp:Install the MCP server into your AI agents'
   )
 
   if (( CURRENT == 2 )); then
@@ -203,7 +207,7 @@ EOF
     fish)
       cat <<'FISHEOF'
 # Fish completions for eng
-set -l commands lead-time lead-time-user change-failure-rate deploy-frequency review-time pr-size files-per-pr files-per-pr-live stale-prs quick-reviews review-load code-churn contributor-patterns lottery-factor dependency-changes contributions pull-discussion analyze-discussion
+set -l commands lead-time lead-time-user change-failure-rate deploy-frequency review-time pr-size files-per-pr files-per-pr-live stale-prs quick-reviews review-load code-churn contributor-patterns lottery-factor dependency-changes contributions pull-discussion analyze-discussion mcp
 
 complete -c eng -f
 complete -c eng -n "not __fish_seen_subcommand_from $commands" -a lead-time -d "Average time from PR creation to merge"
@@ -224,6 +228,7 @@ complete -c eng -n "not __fish_seen_subcommand_from $commands" -a dependency-cha
 complete -c eng -n "not __fish_seen_subcommand_from $commands" -a contributions -d "User review/comment activity"
 complete -c eng -n "not __fish_seen_subcommand_from $commands" -a pull-discussion -d "Full PR discussion text"
 complete -c eng -n "not __fish_seen_subcommand_from $commands" -a analyze-discussion -d "LLM discussion summary"
+complete -c eng -n "not __fish_seen_subcommand_from $commands" -a mcp -d "Install the MCP server into your AI agents"
 complete -c eng -n "__fish_seen_subcommand_from $commands" -l help -d "Show help"
 complete -c eng -n "__fish_seen_subcommand_from $commands" -l csv -d "Output as CSV"
 complete -c eng -l team -d "Filter by GitHub Team"
@@ -250,6 +255,30 @@ case "${1:-}" in
       exit 1
     fi
     generate_completions "$2"
+    ;;
+  mcp)
+    shift
+    sub="${1:-install}"
+    case "$sub" in
+      install)
+        shift 2>/dev/null || true
+        export ENG_MCP_SERVER="${SCRIPT_DIR}/mcp/index.ts"
+        # --dry-run is stripped by eng's global pre-processing; re-add it so
+        # the installer sees it and only prints intended actions.
+        if [[ "$_dry_run" == "true" ]]; then
+          exec bash "${SCRIPT_DIR}/src/mcp-install.sh" "$@" --dry-run
+        fi
+        exec bash "${SCRIPT_DIR}/src/mcp-install.sh" "$@"
+        ;;
+      -h|--help|help|"")
+        echo "Usage: eng mcp install [--all] [--agent <name>] [--dry-run]"
+        ;;
+      *)
+        echo "Unknown 'eng mcp' subcommand: $sub" >&2
+        echo "Try: eng mcp install" >&2
+        exit 1
+        ;;
+    esac
     ;;
   *)
     cmd="$1"
