@@ -74,5 +74,26 @@ ok "dry-run creates no backup" '! ls "$dcfg".bak-* >/dev/null 2>&1'
 
 rm -rf "$RTMP"
 
+# --- main() --agent selection (both forms), dry-run so nothing mutates ---
+MTMP="$(mktemp -d)"
+mkdir -p "$MTMP/.cursor"; echo '{}' > "$MTMP/.cursor/mcp.json"
+mfb="$MTMP/bin"; mkdir -p "$mfb"; printf '#!/bin/sh\ntrue\n' > "$mfb/claude"; chmod +x "$mfb/claude"
+
+OUT_EQ="$(HOME="$MTMP" PATH="$mfb:$PATH" ENG_MCP_SERVER=/x/index.ts main --agent=cursor --dry-run 2>&1)"
+ok "main --agent=cursor selects cursor (dry-run)" '[[ "$OUT_EQ" == *"[dry-run] cursor"* ]]'
+
+OUT_SP="$(HOME="$MTMP" PATH="$mfb:$PATH" ENG_MCP_SERVER=/x/index.ts main --agent cursor --dry-run 2>&1)"
+ok "main --agent cursor (space form) selects cursor (dry-run)" '[[ "$OUT_SP" == *"[dry-run] cursor"* ]]'
+
+OUT_BOGUS="$(HOME="$MTMP" PATH="$mfb:$PATH" ENG_MCP_SERVER=/x/index.ts main --agent bogus --dry-run 2>&1)"; rc=$?
+ok "main --agent bogus errors" '[[ "$rc" -ne 0 && "$OUT_BOGUS" == *"not detected"* ]]'
+
+ok "main --agent=cursor leaves config unmutated in dry-run" '! grep -q engleader "$MTMP/.cursor/mcp.json"'
+rm -rf "$MTMP"
+
+# --- register_agent unknown kind ---
+OUT_UNK="$(register_agent "foo|bogus|" "/x/index.ts" 2>&1)"
+ok "unknown kind is skipped with an error" '[[ "$OUT_UNK" == *"unknown registration kind"* ]]'
+
 echo "----"; echo "$PASS passed, $FAIL failed"
 [[ "$FAIL" -eq 0 ]]

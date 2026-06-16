@@ -3,6 +3,9 @@
 # mcp-install.sh — install the engleader MCP server into AI agents.
 # Dispatched as `eng mcp`. Detects installed agents, prompts, registers.
 #
+# Note: intentionally NOT using -e. Detection and registration rely on
+# `cmd && echo ok || echo fail` and `test && echo ...` short-circuits that
+# would abort the script under `set -e`.
 set -uo pipefail
 
 # Path to the MCP server entrypoint, resolved relative to this script.
@@ -11,7 +14,7 @@ mcp_server_path() {
   if [[ -n "${ENG_MCP_SERVER:-}" ]]; then
     echo "$ENG_MCP_SERVER"
   else
-    local here; here="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+    local here; here="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/.." && pwd)"
     echo "$here/mcp/index.ts"
   fi
 }
@@ -21,7 +24,7 @@ mcp_server_path() {
 #         json -> merge into a JSON config file
 # configpath is empty for cli agents.
 detect_agents() {
-  local home="${HOME}"
+  local home="${HOME:-}"
   command -v claude >/dev/null 2>&1 && echo "claude-code|cli|"
   [[ -f "$home/.cursor/mcp.json" ]]                 && echo "cursor|json|$home/.cursor/mcp.json"
   [[ -f "$home/.config/Code/User/mcp.json" ]]       && echo "vscode|json|$home/.config/Code/User/mcp.json"
@@ -38,7 +41,10 @@ detect_agents() {
 merge_json_config() {
   local cfg="$1" server="$2"
   local ts; ts="$(date -u +%Y%m%d%H%M%S)"
-  cp "$cfg" "${cfg}.bak-${ts}"
+  cp "$cfg" "${cfg}.bak-${ts}" || {
+    echo "Error: could not back up $cfg; aborting merge." >&2
+    return 1
+  }
 
   # Treat an empty file as an empty object.
   local current; current="$(cat "$cfg")"
@@ -129,7 +135,11 @@ main() {
 
   # Non-interactive paths
   if [[ -n "$target_agent" ]]; then
-    local entry; entry="$(echo "$detected" | grep "^${target_agent}|" || true)"
+    local entry=""
+    while IFS= read -r line; do
+      [[ -z "$line" ]] && continue
+      if [[ "${line%%|*}" == "$target_agent" ]]; then entry="$line"; break; fi
+    done <<<"$detected"
     [[ -z "$entry" ]] && { echo "Agent '$target_agent' not detected." >&2; return 1; }
     register_agent "$entry" "$server"
     return 0
