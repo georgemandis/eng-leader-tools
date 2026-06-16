@@ -191,6 +191,7 @@ _eng() {
     'contributions:User review/comment activity'
     'pull-discussion:Full PR discussion text'
     'analyze-discussion:LLM discussion summary'
+    'mcp:Install the MCP server into your AI agents'
   )
 
   if (( CURRENT == 2 )); then
@@ -206,7 +207,7 @@ EOF
     fish)
       cat <<'FISHEOF'
 # Fish completions for eng
-set -l commands lead-time lead-time-user change-failure-rate deploy-frequency review-time pr-size files-per-pr files-per-pr-live stale-prs quick-reviews review-load code-churn contributor-patterns lottery-factor dependency-changes contributions pull-discussion analyze-discussion
+set -l commands lead-time lead-time-user change-failure-rate deploy-frequency review-time pr-size files-per-pr files-per-pr-live stale-prs quick-reviews review-load code-churn contributor-patterns lottery-factor dependency-changes contributions pull-discussion analyze-discussion mcp
 
 complete -c eng -f
 complete -c eng -n "not __fish_seen_subcommand_from $commands" -a lead-time -d "Average time from PR creation to merge"
@@ -227,6 +228,7 @@ complete -c eng -n "not __fish_seen_subcommand_from $commands" -a dependency-cha
 complete -c eng -n "not __fish_seen_subcommand_from $commands" -a contributions -d "User review/comment activity"
 complete -c eng -n "not __fish_seen_subcommand_from $commands" -a pull-discussion -d "Full PR discussion text"
 complete -c eng -n "not __fish_seen_subcommand_from $commands" -a analyze-discussion -d "LLM discussion summary"
+complete -c eng -n "not __fish_seen_subcommand_from $commands" -a mcp -d "Install the MCP server into your AI agents"
 complete -c eng -n "__fish_seen_subcommand_from $commands" -l help -d "Show help"
 complete -c eng -n "__fish_seen_subcommand_from $commands" -l csv -d "Output as CSV"
 complete -c eng -l team -d "Filter by GitHub Team"
