@@ -68,12 +68,27 @@ export const TOOLS: ToolDef[] = [
 ];
 
 // Turn validated params into the ordered positional argument array for eng.
+// Positionals are order-sensitive: once one is omitted, no later positional
+// may be supplied (eng would mis-read it as the earlier slot).
 export function buildArgs(tool: ToolDef, params: Record<string, unknown>): string[] {
+  if (params.repo === undefined || params.repo === null) {
+    throw new Error("buildArgs: 'repo' is required");
+  }
   const args: string[] = [String(params.repo)];
   if (tool.prNumber) args.push(String(params.pr_number));
+
+  let sawGap = false;
   for (const p of tool.numParams) {
     const v = params[p.key];
-    if (v !== undefined && v !== null) args.push(String(v));
+    const present = v !== undefined && v !== null;
+    if (present && sawGap) {
+      throw new Error(
+        `buildArgs: '${p.key}' was provided but an earlier positional ` +
+          `argument was omitted; supply the earlier argument(s) too.`,
+      );
+    }
+    if (present) args.push(String(v));
+    else sawGap = true;
   }
   return args;
 }

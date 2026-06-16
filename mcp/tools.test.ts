@@ -45,3 +45,23 @@ test("eng_pull_discussion requires pr_number and is raw", () => {
     "42",
   ]);
 });
+
+test("buildArgs admits a 0 value for an optional numeric param", () => {
+  const tool = TOOLS.find((t) => t.name === "eng_code_churn")!;
+  expect(buildArgs(tool, { repo: "acme/widget", window_days: 0 })).toEqual([
+    "acme/widget",
+    "0",
+  ]);
+});
+
+test("buildArgs throws when a later positional is set but an earlier one is omitted", () => {
+  const tool = TOOLS.find((t) => t.name === "eng_code_churn")!;
+  expect(() => buildArgs(tool, { repo: "acme/widget", min_changes: 3 })).toThrow(
+    /min_changes.*earlier positional/s
+  );
+});
+
+test("buildArgs throws when repo is missing", () => {
+  const tool = TOOLS.find((t) => t.name === "eng_lead_time")!;
+  expect(() => buildArgs(tool, {})).toThrow(/repo/);
+});
