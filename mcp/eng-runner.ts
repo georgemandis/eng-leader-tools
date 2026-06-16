@@ -65,7 +65,7 @@ export async function runEng(
 
   if (opts.raw && exitCode === 0) return stdout;
 
-  let parsed: any;
+  let parsed: unknown;
   try {
     parsed = JSON.parse(stdout);
   } catch {
@@ -76,8 +76,9 @@ export async function runEng(
   }
 
   if (exitCode !== 0) {
-    const code = parsed?.code ?? "UNKNOWN";
-    const message = parsed?.error ?? "eng command failed";
+    const err = parsed as { code?: string; error?: string };
+    const code = err.code ?? "UNKNOWN";
+    const message = err.error ?? "eng command failed";
     throw new Error(`[${code}] ${message}`);
   }
 
