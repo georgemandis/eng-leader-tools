@@ -1,6 +1,8 @@
 # engleader MCP server
 
-Exposes `eng` metric commands as MCP tools so AI agents (Claude Code, Cursor, VS Code, Gemini, Codex, Windsurf, OpenCode) can query engineering-leadership metrics directly.
+Exposes `eng` metric commands as MCP tools so AI agents can query engineering-leadership metrics directly.
+
+**Agent support:** Claude Code and Cursor are fully supported and verified. VS Code, Gemini, Codex, Windsurf, and OpenCode are best-effort — their MCP config schemas vary, so the installer's entry may need a manual tweak (Codex, for example, uses a TOML config rather than the `.mcpServers` JSON key the installer writes).
 
 ## Prerequisites
 

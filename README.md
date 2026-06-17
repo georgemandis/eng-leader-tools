@@ -75,7 +75,7 @@ You can also set `ENG_REPO` and `ENG_OWNER` environment variables to override au
 eng mcp install
 ```
 
-This detects Claude Code, Cursor, VS Code, Gemini, Codex, Windsurf, and OpenCode, asks which to set up, and registers the server. See [`mcp/README.md`](mcp/README.md) for details. Requires [Bun](https://bun.sh).
+It detects your installed agents, asks which to set up, and registers the server. Claude Code and Cursor are fully supported and verified; VS Code, Gemini, Codex, Windsurf, and OpenCode are best-effort and may need a manual config tweak. See [`mcp/README.md`](mcp/README.md) for details. Requires [Bun](https://bun.sh).
 
 ### Team Filtering
 
