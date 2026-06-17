@@ -143,5 +143,59 @@ ok "cli unregister invokes claude mcp remove engleader" 'grep -q "mcp remove eng
 
 rm -rf "$UTMP"
 
+# --- uninstall_main flow ---
+NTMP="$(mktemp -d)"
+# fake claude that reports engleader as registered and logs removes
+nfb="$NTMP/bin"; mkdir -p "$nfb"
+cat > "$nfb/claude" <<'EOF'
+#!/bin/sh
+case "$1 $2" in
+  "mcp get") exit 0 ;;            # engleader is registered
+  "mcp remove") echo "removed $3" >> "$CLAUDE_LOG"; exit 0 ;;
+  *) exit 0 ;;
+esac
+EOF
+chmod +x "$nfb/claude"
+
+# cursor present WITH engleader; opencode present WITHOUT engleader
+mkdir -p "$NTMP/.cursor";          echo '{"mcpServers":{"engleader":{"command":"bun"}}}' > "$NTMP/.cursor/mcp.json"
+mkdir -p "$NTMP/.config/opencode"; echo '{"mcpServers":{"other":{"command":"x"}}}'        > "$NTMP/.config/opencode/opencode.json"
+
+# --all removes from registered agents only (cursor + claude), not opencode
+CLAUDE_LOG="$NTMP/c.log" HOME="$NTMP" PATH="$nfb:$PATH" uninstall_main --all >/dev/null 2>&1
+ok "uninstall --all removes engleader from cursor" '! jq -e ".mcpServers.engleader" "$NTMP/.cursor/mcp.json" >/dev/null 2>&1'
+ok "uninstall --all calls claude mcp remove" 'grep -q "removed engleader" "$NTMP/c.log"'
+ok "uninstall --all leaves opencode (no engleader) untouched" 'jq -e ".mcpServers.other" "$NTMP/.config/opencode/opencode.json" >/dev/null 2>&1'
+
+# --agent targeting a registered agent
+echo '{"mcpServers":{"engleader":{"command":"bun"}}}' > "$NTMP/.cursor/mcp.json"
+HOME="$NTMP" PATH="$nfb:$PATH" uninstall_main --agent cursor >/dev/null 2>&1
+ok "uninstall --agent cursor removes from cursor" '! jq -e ".mcpServers.engleader" "$NTMP/.cursor/mcp.json" >/dev/null 2>&1'
+
+# --agent for an agent without engleader -> error, non-zero
+HOME="$NTMP" PATH="$nfb:$PATH" uninstall_main --agent opencode >/dev/null 2>&1; rc=$?
+ok "uninstall --agent opencode (unregistered) errors" '[[ "$rc" -ne 0 ]]'
+
+# --dry-run mutates nothing
+echo '{"mcpServers":{"engleader":{"command":"bun"}}}' > "$NTMP/.cursor/mcp.json"
+HOME="$NTMP" PATH="$nfb:$PATH" uninstall_main --all --dry-run >/dev/null 2>&1
+ok "uninstall --dry-run leaves cursor engleader in place" 'jq -e ".mcpServers.engleader" "$NTMP/.cursor/mcp.json" >/dev/null 2>&1'
+
+# nothing registered -> friendly message + exit 0
+ETMP="$(mktemp -d)"
+efb="$ETMP/bin"; mkdir -p "$efb"
+cat > "$efb/claude" <<'EOF'
+#!/bin/sh
+exit 1
+EOF
+chmod +x "$efb/claude"
+mkdir -p "$ETMP/.cursor"; echo '{"mcpServers":{"other":{"command":"x"}}}' > "$ETMP/.cursor/mcp.json"
+OUT_NONE="$(HOME="$ETMP" PATH="$efb:$PATH" uninstall_main --all 2>&1)"; rc=$?
+ok "uninstall with nothing registered returns 0" '[[ "$rc" -eq 0 ]]'
+ok "uninstall with nothing registered says so" '[[ "$OUT_NONE" == *"not registered in any"* ]]'
+rm -rf "$ETMP"
+
+rm -rf "$NTMP"
+
 echo "----"; echo "$PASS passed, $FAIL failed"
 [[ "$FAIL" -eq 0 ]]

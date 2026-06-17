@@ -231,6 +231,92 @@ unregister_agent() {
   esac
 }
 
+# uninstall_main [--all] [--agent <name>] [--dry-run]
+#   Removes engleader from agents that currently have it registered.
+uninstall_main() {
+  local dry_run="" target_agent="" remove_all=""
+  for arg in "$@"; do
+    case "$arg" in
+      --dry-run) dry_run=1 ;;
+      --all) remove_all=1 ;;
+      --agent) ;; # value handled below
+      --agent=*) target_agent="${arg#--agent=}" ;;
+      -h|--help)
+        echo "Usage: eng mcp uninstall [--all] [--agent <name>] [--dry-run]"
+        echo "Agents: claude-code cursor vscode gemini codex windsurf opencode"
+        return 0 ;;
+    esac
+  done
+  # support `--agent <name>` (space form)
+  local prev=""
+  for arg in "$@"; do
+    [[ "$prev" == "--agent" ]] && target_agent="$arg"
+    prev="$arg"
+  done
+  [[ -n "$dry_run" ]] && export ENG_MCP_DRY_RUN=1
+
+  # Build the registered set: detected agents that actually have engleader.
+  local registered=""
+  while IFS= read -r line; do
+    [[ -z "$line" ]] && continue
+    if agent_has_engleader "$line"; then
+      registered+="${line}"$'\n'
+    fi
+  done <<<"$(detect_agents)"
+  registered="${registered%$'\n'}"
+
+  if [[ -z "$registered" ]]; then
+    echo "engleader is not registered in any detected agent."
+    return 0
+  fi
+
+  echo "engleader is registered in:"
+  while IFS='|' read -r name kind path; do
+    [[ -z "$name" ]] && continue
+    echo "  - $name${path:+  ($path)}"
+  done <<<"$registered"
+  echo
+
+  # Non-interactive paths
+  if [[ -n "$target_agent" ]]; then
+    local entry=""
+    while IFS= read -r line; do
+      [[ -z "$line" ]] && continue
+      if [[ "${line%%|*}" == "$target_agent" ]]; then entry="$line"; break; fi
+    done <<<"$registered"
+    [[ -z "$entry" ]] && { echo "Agent '$target_agent' does not have engleader registered." >&2; return 1; }
+    unregister_agent "$entry"
+    return 0
+  fi
+  if [[ -n "$remove_all" ]]; then
+    while IFS= read -r entry; do
+      [[ -z "$entry" ]] && continue
+      unregister_agent "$entry"
+    done <<<"$registered"
+    return 0
+  fi
+
+  # Interactive
+  printf "Remove from which? [a]ll / [c]hoose / [q]uit: "
+  read -r choice
+  case "$choice" in
+    a|A)
+      while IFS= read -r entry; do
+        [[ -z "$entry" ]] && continue
+        unregister_agent "$entry"
+      done <<<"$registered" ;;
+    c|C)
+      while IFS='|' read -r name kind path; do
+        [[ -z "$name" ]] && continue
+        printf "Remove from %s? [y/N]: " "$name"
+        read -r yn
+        [[ "$yn" == "y" || "$yn" == "Y" ]] && unregister_agent "$name|$kind|$path"
+      done <<<"$registered" ;;
+    *)
+      echo "Aborted." ;;
+  esac
+}
+
 if [[ -z "${ENG_MCP_LIB:-}" ]]; then
   main "$@"
 fi
