@@ -118,3 +118,56 @@ json_preflight() {
     command -v gh  >/dev/null 2>&1 || json_error DEP_MISSING "gh (GitHub CLI) is not installed"
     gh auth status >/dev/null 2>&1 || json_error AUTH "gh is not authenticated"
 }
+
+# ── Parallel per-PR fetch helper ─────────────────────────────────────
+# The metrics that fetch per-PR detail (lottery-factor, contributor-patterns,
+# review-time, …) make one `gh api` call per PR. Run them concurrently with
+# xargs -P for a large speedup on big repos, without hammering GitHub's
+# secondary rate limits.
+#
+# ENG_CONCURRENCY controls the degree of parallelism (default 8).
+eng_concurrency() {
+    local n="${ENG_CONCURRENCY:-8}"
+    # guard against non-numeric / zero
+    [[ "$n" =~ ^[1-9][0-9]*$ ]] || n=8
+    printf '%s' "$n"
+}
+
+# parallel_map <worker_fn> < input
+#   Reads input lines on stdin and runs the shell function <worker_fn> for each,
+#   up to ENG_CONCURRENCY at a time, with the line passed as "$1".
+#
+#   Implementation note: we serialize the function with `declare -f` into a temp
+#   file that each xargs worker sources. This is deliberate — `export -f` does
+#   NOT reliably reach the bash that xargs spawns (the BASH_FUNC_* env entries
+#   are not always present), so the obvious `bash -c 'fn "$1"'` silently fails
+#   with "command not found". Sourcing a serialized definition is robust.
+#
+#   The function may use jq's `--arg`/`--argjson` exactly as in the serial
+#   version (no shell-into-jq interpolation pitfalls). Any plain env vars it
+#   needs (e.g. REPO) must be exported by the caller.
+#
+#   Output from all workers is concatenated to stdout. Workers must emit only
+#   whole lines shorter than the pipe buffer (PIPE_BUF, >=512B everywhere) so
+#   concurrent appends don't interleave — true for the short records these
+#   scripts produce.
+#
+#   IMPORTANT — field separator: `xargs -I{}` normalizes whitespace (it turns a
+#   tab inside the replacement into a space), so multi-field input lines must
+#   NOT be tab/space separated. Use `|` between fields (PR numbers are integers
+#   and GitHub logins cannot contain `|`, so it is safe here).
+#
+# Usage:
+#   fetch_one() { local n="${1%%|*}" a="${1#*|}"; gh api ... | jq ...; }
+#   export REPO
+#   printf '%s\n' "${items[@]}" | parallel_map fetch_one   # lines: "num|author"
+parallel_map() {
+    local worker="$1"
+    local jobs; jobs=$(eng_concurrency)
+    local fnfile; fnfile=$(mktemp)
+    # Serialize the function definition + an invocation that takes "$1".
+    declare -f "$worker" > "$fnfile"
+    printf '%s "$1"\n' "$worker" >> "$fnfile"
+    xargs -P "$jobs" -I {} bash "$fnfile" {}
+    rm -f "$fnfile"
+}
