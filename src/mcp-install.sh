@@ -173,6 +173,28 @@ main() {
   esac
 }
 
+# agent_has_engleader <"name|kind|path">
+#   Returns 0 only if engleader is currently registered for that agent.
+agent_has_engleader() {
+  local entry="$1"
+  local name kind path
+  IFS='|' read -r name kind path <<<"$entry"
+  case "$kind" in
+    cli)
+      claude mcp get engleader >/dev/null 2>&1 && return 0
+      claude mcp list 2>/dev/null | grep -q '^engleader\b' && return 0
+      return 1
+      ;;
+    json)
+      [[ -f "$path" ]] || return 1
+      jq -e '.mcpServers.engleader' "$path" >/dev/null 2>&1
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
 if [[ -z "${ENG_MCP_LIB:-}" ]]; then
   main "$@"
 fi

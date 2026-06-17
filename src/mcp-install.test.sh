@@ -95,5 +95,15 @@ rm -rf "$MTMP"
 OUT_UNK="$(register_agent "foo|bogus|" "/x/index.ts" 2>&1)"
 ok "unknown kind is skipped with an error" '[[ "$OUT_UNK" == *"unknown registration kind"* ]]'
 
+# --- agent_has_engleader probe ---
+HTMP="$(mktemp -d)"
+has_cfg="$HTMP/has.json";  echo '{"mcpServers":{"engleader":{"command":"bun"}}}' > "$has_cfg"
+no_cfg="$HTMP/no.json";    echo '{"mcpServers":{"other":{"command":"x"}}}'        > "$no_cfg"
+
+ok "agent_has_engleader true when engleader present" 'agent_has_engleader "cursor|json|$has_cfg"'
+ok "agent_has_engleader false when engleader absent" '! agent_has_engleader "cursor|json|$no_cfg"'
+ok "agent_has_engleader false when file missing" '! agent_has_engleader "cursor|json|$HTMP/nope.json"'
+rm -rf "$HTMP"
+
 echo "----"; echo "$PASS passed, $FAIL failed"
 [[ "$FAIL" -eq 0 ]]
