@@ -318,5 +318,10 @@ uninstall_main() {
 }
 
 if [[ -z "${ENG_MCP_LIB:-}" ]]; then
-  main "$@"
+  if [[ "${1:-}" == "uninstall" ]]; then
+    shift; uninstall_main "$@"
+  else
+    [[ "${1:-}" == "install" ]] && shift
+    main "$@"
+  fi
 fi

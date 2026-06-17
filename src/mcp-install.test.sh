@@ -197,5 +197,25 @@ rm -rf "$ETMP"
 
 rm -rf "$NTMP"
 
+# --- entry-point dispatch (subprocess, not sourced) ---
+DTMP="$(mktemp -d)"
+dfb="$DTMP/bin"; mkdir -p "$dfb"
+cat > "$dfb/claude" <<'EOF'
+#!/bin/sh
+exit 1
+EOF
+chmod +x "$dfb/claude"
+# No agents have engleader, so both paths short-circuit with a recognizable line.
+
+OUT_UNINST="$(HOME="$DTMP" PATH="$dfb:$PATH" bash "$SCRIPT_DIR/mcp-install.sh" uninstall --all 2>&1)"
+ok "entry dispatch: 'uninstall' reaches uninstall_main" '[[ "$OUT_UNINST" == *"not registered in any"* ]]'
+
+OUT_INST="$(HOME="$DTMP" PATH="$dfb:$PATH" bash "$SCRIPT_DIR/mcp-install.sh" install --all 2>&1)"
+ok "entry dispatch: 'install' reaches main" '[[ "$OUT_INST" == *"No supported agents detected"* || "$OUT_INST" == *"Detected agents"* ]]'
+
+OUT_BARE="$(HOME="$DTMP" PATH="$dfb:$PATH" bash "$SCRIPT_DIR/mcp-install.sh" --dry-run 2>&1)"
+ok "entry dispatch: bare flags still reach main" '[[ "$OUT_BARE" == *"No supported agents detected"* || "$OUT_BARE" == *"Detected agents"* ]]'
+rm -rf "$DTMP"
+
 echo "----"; echo "$PASS passed, $FAIL failed"
 [[ "$FAIL" -eq 0 ]]
