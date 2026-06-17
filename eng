@@ -270,8 +270,17 @@ case "${1:-}" in
         fi
         exec bash "${SCRIPT_DIR}/src/mcp-install.sh" "$@"
         ;;
+      uninstall)
+        shift 2>/dev/null || true
+        export ENG_MCP_SERVER="${SCRIPT_DIR}/mcp/index.ts"
+        # --dry-run is stripped by eng's global pre-processing; re-add it.
+        if [[ "$_dry_run" == "true" ]]; then
+          exec bash "${SCRIPT_DIR}/src/mcp-install.sh" uninstall "$@" --dry-run
+        fi
+        exec bash "${SCRIPT_DIR}/src/mcp-install.sh" uninstall "$@"
+        ;;
       -h|--help|help|"")
-        echo "Usage: eng mcp install [--all] [--agent <name>] [--dry-run]"
+        echo "Usage: eng mcp <install|uninstall> [--all] [--agent <name>] [--dry-run]"
         ;;
       *)
         echo "Unknown 'eng mcp' subcommand: $sub" >&2
