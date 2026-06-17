@@ -115,25 +115,24 @@ fi
 temp_file=$(mktemp)
 trap "rm -f $temp_file" EXIT
 
-# Process each PR to collect contributor and file count data
-echo "$PR_JSON" | jq -r '.[] | @base64' | while IFS= read -r pr_b64; do
-  pr=$(echo "$pr_b64" | base64 --decode)
-  
-  num=$(echo "$pr" | jq -r '.number')
-  author=$(echo "$pr" | jq -r '.author.login')
-
+# Worker: input is "<number>|<author>"; emits "<author> <files_count>".
+# Skips non-team members when the team filter is active (emits nothing).
+_cfp_fetch_pr() {
+  local num="${1%%|*}" author="${1#*|}"
   # Skip non-team members if team filter is active
   if [[ -n "${ENG_TEAM_MEMBERS:-}" ]]; then
-    if ! echo ",${ENG_TEAM_MEMBERS}," | grep -q ",${author},"; then
-      continue
-    fi
+    echo ",${ENG_TEAM_MEMBERS}," | grep -q ",${author}," || return 0
   fi
+  local files_count
+  files_count=$(gh api "repos/$REPO/pulls/$num/files" --paginate 2>/dev/null | jq 'length')
+  echo "$author $files_count"
+}
+export REPO ENG_TEAM_MEMBERS
 
-  # Get file count for this PR
-  files_count=$(gh api "repos/$REPO/pulls/$num/files" --paginate | jq 'length')
-  
-  echo "$author $files_count" >> "$temp_file"
-done
+# Run all per-PR fetches in parallel; collect into the temp file.
+echo "$PR_JSON" \
+  | jq -r '.[] | "\(.number)|\(.author.login)"' \
+  | parallel_map _cfp_fetch_pr >> "$temp_file"
 
 # JSON output: aggregate per-contributor stats from the collected source and
 # emit a single envelope. The positional arg is a PR COUNT, not a day window,
