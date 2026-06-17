@@ -58,6 +58,19 @@ set -- "${args[@]+"${args[@]}"}"
 
 source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 
+# parallel_map <worker_fn>
+#   Reads lines from stdin and runs <worker_fn> once per line, up to
+#   ENG_CONCURRENCY (default 8) at a time, concatenating their stdout.
+#   The worker is a normal shell function (serialized with declare -f,
+#   not export -f); each invocation receives the line as $1.
+#   Input fields should be '|'-separated and each worker should emit
+#   whole, short lines.
+parallel_map() {
+  local _worker="$1"
+  xargs -P "${ENG_CONCURRENCY:-8}" -I '{}' \
+    bash -c "$(declare -f "$_worker"); $_worker \"\$@\"" _ '{}'
+}
+
 resolve_repo "${1:-}" || { usage >&2; exit 1; }
 [[ "$_REPO_FROM_ARG" == true ]] && shift
 
@@ -158,6 +171,26 @@ fi
 
 pr_records=()
 
+# Precompute per-PR review timing in parallel (num -> review_count and
+# earliest review submitted_at), so the expensive per-PR
+# `gh api .../reviews` calls run concurrently. The loop below reads these
+# precomputed values, preserving output, ordering, and accumulators.
+prefetch_file=$(mktemp)
+trap "rm -f $prefetch_file" EXIT
+
+_prt_fetch() {
+  local num="${1%%|*}"
+  local reviews count first
+  reviews=$(gh api "repos/$REPO/pulls/$num/reviews" --paginate 2>/dev/null || echo "[]")
+  count=$(echo "$reviews" | jq 'length')
+  # Match the serial derivation exactly: min_by(.submitted_at).submitted_at
+  # (empty string when there are no reviews).
+  first=$(echo "$reviews" | jq -r 'if length > 0 then (min_by(.submitted_at) | .submitted_at) else "" end')
+  echo "$num|$count|$first"
+}
+export REPO
+echo "$PR_JSON" | jq -r '.[] | "\(.number)|"' | parallel_map _prt_fetch > "$prefetch_file"
+
 # Process each PR
 while IFS= read -r pr_b64; do
   pr=$(echo "$pr_b64" | base64 --decode)
@@ -169,9 +202,9 @@ while IFS= read -r pr_b64; do
   author=$(echo "$pr" | jq -r '.author.login')
   url=$(echo "$pr" | jq -r '.url')
 
-  # Get review information
-  reviews=$(gh api "repos/$REPO/pulls/$num/reviews" --paginate)
-  review_count=$(echo "$reviews" | jq 'length')
+  # Look up the precomputed (parallel) review timing for this PR
+  review_count=$(awk -F'|' -v n="$num" '$1==n {print $2; exit}' "$prefetch_file")
+  first_review_date=$(awk -F'|' -v n="$num" '$1==n {print $3; exit}' "$prefetch_file")
 
   # Calculate times
   ts_created=$(parse_timestamp "$created")
@@ -180,7 +213,6 @@ while IFS= read -r pr_b64; do
   merge_time=$(format_time "$merge_delta")
 
   if (( review_count > 0 )); then
-    first_review_date=$(echo "$reviews" | jq -r 'min_by(.submitted_at) | .submitted_at')
     ts_first_review=$(parse_timestamp "$first_review_date")
     first_review_delta=$(( ts_first_review - ts_created ))
     first_review_time=$(format_time "$first_review_delta")

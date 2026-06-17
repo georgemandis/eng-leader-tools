@@ -95,5 +95,127 @@ rm -rf "$MTMP"
 OUT_UNK="$(register_agent "foo|bogus|" "/x/index.ts" 2>&1)"
 ok "unknown kind is skipped with an error" '[[ "$OUT_UNK" == *"unknown registration kind"* ]]'
 
+# --- agent_has_engleader probe ---
+HTMP="$(mktemp -d)"
+has_cfg="$HTMP/has.json";  echo '{"mcpServers":{"engleader":{"command":"bun"}}}' > "$has_cfg"
+no_cfg="$HTMP/no.json";    echo '{"mcpServers":{"other":{"command":"x"}}}'        > "$no_cfg"
+
+ok "agent_has_engleader true when engleader present" 'agent_has_engleader "cursor|json|$has_cfg"'
+ok "agent_has_engleader false when engleader absent" '! agent_has_engleader "cursor|json|$no_cfg"'
+ok "agent_has_engleader false when file missing" '! agent_has_engleader "cursor|json|$HTMP/nope.json"'
+rm -rf "$HTMP"
+
+# --- unregister_agent (json) ---
+UTMP="$(mktemp -d)"
+ucfg="$UTMP/mcp.json"
+echo '{"mcpServers":{"engleader":{"command":"bun"},"engsight":{"command":"x"}},"other":1}' > "$ucfg"
+
+unregister_agent "cursor|json|$ucfg" >/dev/null
+ok "unregister removes engleader" '! jq -e ".mcpServers.engleader" "$ucfg" >/dev/null 2>&1'
+ok "unregister preserves peer engsight" 'jq -e ".mcpServers.engsight" "$ucfg" >/dev/null 2>&1'
+ok "unregister preserves other top-level key" '[[ "$(jq -r ".other" "$ucfg")" == "1" ]]'
+
+# sole entry -> leaves empty mcpServers object (no pruning)
+solecfg="$UTMP/sole.json"
+echo '{"mcpServers":{"engleader":{"command":"bun"}}}' > "$solecfg"
+unregister_agent "cursor|json|$solecfg" >/dev/null
+ok "unregister leaves empty mcpServers object" '[[ "$(jq -c ".mcpServers" "$solecfg")" == "{}" ]]'
+
+# no backup file is created
+ok "unregister creates no backup" '! ls "$ucfg".bak-* >/dev/null 2>&1'
+
+# dry-run mutates nothing
+drycfg="$UTMP/dry.json"
+echo '{"mcpServers":{"engleader":{"command":"bun"}}}' > "$drycfg"
+ENG_MCP_DRY_RUN=1 unregister_agent "cursor|json|$drycfg" >/dev/null
+ok "dry-run leaves engleader in place" 'jq -e ".mcpServers.engleader" "$drycfg" >/dev/null 2>&1'
+
+# cli path invokes claude mcp remove (fake claude logs args)
+ufb="$UTMP/bin"; mkdir -p "$ufb"
+cat > "$ufb/claude" <<'EOF'
+#!/bin/sh
+echo "$@" >> "$CLAUDE_LOG"
+EOF
+chmod +x "$ufb/claude"
+CLAUDE_LOG="$UTMP/claude.log" PATH="$ufb:$PATH" \
+  unregister_agent "claude-code|cli|" >/dev/null
+ok "cli unregister invokes claude mcp remove engleader" 'grep -q "mcp remove engleader" "$UTMP/claude.log"'
+
+rm -rf "$UTMP"
+
+# --- uninstall_main flow ---
+NTMP="$(mktemp -d)"
+# fake claude that reports engleader as registered and logs removes
+nfb="$NTMP/bin"; mkdir -p "$nfb"
+cat > "$nfb/claude" <<'EOF'
+#!/bin/sh
+case "$1 $2" in
+  "mcp get") exit 0 ;;            # engleader is registered
+  "mcp remove") echo "removed $3" >> "$CLAUDE_LOG"; exit 0 ;;
+  *) exit 0 ;;
+esac
+EOF
+chmod +x "$nfb/claude"
+
+# cursor present WITH engleader; opencode present WITHOUT engleader
+mkdir -p "$NTMP/.cursor";          echo '{"mcpServers":{"engleader":{"command":"bun"}}}' > "$NTMP/.cursor/mcp.json"
+mkdir -p "$NTMP/.config/opencode"; echo '{"mcpServers":{"other":{"command":"x"}}}'        > "$NTMP/.config/opencode/opencode.json"
+
+# --all removes from registered agents only (cursor + claude), not opencode
+CLAUDE_LOG="$NTMP/c.log" HOME="$NTMP" PATH="$nfb:$PATH" uninstall_main --all >/dev/null 2>&1
+ok "uninstall --all removes engleader from cursor" '! jq -e ".mcpServers.engleader" "$NTMP/.cursor/mcp.json" >/dev/null 2>&1'
+ok "uninstall --all calls claude mcp remove" 'grep -q "removed engleader" "$NTMP/c.log"'
+ok "uninstall --all leaves opencode (no engleader) untouched" 'jq -e ".mcpServers.other" "$NTMP/.config/opencode/opencode.json" >/dev/null 2>&1'
+
+# --agent targeting a registered agent
+echo '{"mcpServers":{"engleader":{"command":"bun"}}}' > "$NTMP/.cursor/mcp.json"
+HOME="$NTMP" PATH="$nfb:$PATH" uninstall_main --agent cursor >/dev/null 2>&1
+ok "uninstall --agent cursor removes from cursor" '! jq -e ".mcpServers.engleader" "$NTMP/.cursor/mcp.json" >/dev/null 2>&1'
+
+# --agent for an agent without engleader -> error, non-zero
+HOME="$NTMP" PATH="$nfb:$PATH" uninstall_main --agent opencode >/dev/null 2>&1; rc=$?
+ok "uninstall --agent opencode (unregistered) errors" '[[ "$rc" -ne 0 ]]'
+
+# --dry-run mutates nothing
+echo '{"mcpServers":{"engleader":{"command":"bun"}}}' > "$NTMP/.cursor/mcp.json"
+HOME="$NTMP" PATH="$nfb:$PATH" uninstall_main --all --dry-run >/dev/null 2>&1
+ok "uninstall --dry-run leaves cursor engleader in place" 'jq -e ".mcpServers.engleader" "$NTMP/.cursor/mcp.json" >/dev/null 2>&1'
+
+# nothing registered -> friendly message + exit 0
+ETMP="$(mktemp -d)"
+efb="$ETMP/bin"; mkdir -p "$efb"
+cat > "$efb/claude" <<'EOF'
+#!/bin/sh
+exit 1
+EOF
+chmod +x "$efb/claude"
+mkdir -p "$ETMP/.cursor"; echo '{"mcpServers":{"other":{"command":"x"}}}' > "$ETMP/.cursor/mcp.json"
+OUT_NONE="$(HOME="$ETMP" PATH="$efb:$PATH" uninstall_main --all 2>&1)"; rc=$?
+ok "uninstall with nothing registered returns 0" '[[ "$rc" -eq 0 ]]'
+ok "uninstall with nothing registered says so" '[[ "$OUT_NONE" == *"not registered in any"* ]]'
+rm -rf "$ETMP"
+
+rm -rf "$NTMP"
+
+# --- entry-point dispatch (subprocess, not sourced) ---
+DTMP="$(mktemp -d)"
+dfb="$DTMP/bin"; mkdir -p "$dfb"
+cat > "$dfb/claude" <<'EOF'
+#!/bin/sh
+exit 1
+EOF
+chmod +x "$dfb/claude"
+# No agents have engleader, so both paths short-circuit with a recognizable line.
+
+OUT_UNINST="$(HOME="$DTMP" PATH="$dfb:$PATH" bash "$SCRIPT_DIR/mcp-install.sh" uninstall --all 2>&1)"
+ok "entry dispatch: 'uninstall' reaches uninstall_main" '[[ "$OUT_UNINST" == *"not registered in any"* ]]'
+
+OUT_INST="$(HOME="$DTMP" PATH="$dfb:$PATH" bash "$SCRIPT_DIR/mcp-install.sh" install --all 2>&1)"
+ok "entry dispatch: 'install' reaches main" '[[ "$OUT_INST" == *"No supported agents detected"* || "$OUT_INST" == *"Detected agents"* ]]'
+
+OUT_BARE="$(HOME="$DTMP" PATH="$dfb:$PATH" bash "$SCRIPT_DIR/mcp-install.sh" --dry-run 2>&1)"
+ok "entry dispatch: bare flags still reach main" '[[ "$OUT_BARE" == *"No supported agents detected"* || "$OUT_BARE" == *"Detected agents"* ]]'
+rm -rf "$DTMP"
+
 echo "----"; echo "$PASS passed, $FAIL failed"
 [[ "$FAIL" -eq 0 ]]

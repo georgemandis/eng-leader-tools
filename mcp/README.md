@@ -18,6 +18,14 @@ eng mcp install --all      # all detected agents
 eng mcp install --dry-run  # show what would change, write nothing
 ```
 
+To remove it again:
+
+```bash
+eng mcp uninstall            # interactive
+eng mcp uninstall --all      # remove from every agent that has it
+eng mcp uninstall --dry-run  # show what would be removed, write nothing
+```
+
 ## Manual (Claude Code)
 
 ```bash

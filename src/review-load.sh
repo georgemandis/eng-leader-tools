@@ -120,34 +120,40 @@ temp_reviews=$(mktemp)
 temp_authors=$(mktemp)
 trap "rm -f $temp_reviews $temp_authors" EXIT
 
-total_prs=0
+# Authors: one line per PR (in PR_JSON order), filtered to team members when a
+# team filter is set. This needs no gh call, so derive it directly from PR_JSON
+# rather than looping — matches the serial behavior exactly.
+if [[ -z "$_team_filter" ]]; then
+  echo "$PR_JSON" | jq -r '.[].author.login' >> "$temp_authors"
+else
+  echo "$PR_JSON" | jq -r '.[].author.login' \
+    | grep -E "^(${_team_filter})$" >> "$temp_authors" || true
+fi
 
-# Process each PR to collect reviewer data
-echo "$PR_JSON" | jq -r '.[] | @base64' | while IFS= read -r pr_b64; do
-  pr=$(echo "$pr_b64" | base64 --decode)
-
-  num=$(echo "$pr" | jq -r '.number')
-  author=$(echo "$pr" | jq -r '.author.login')
-
-  if [[ -z "$_team_filter" ]] || echo "$author" | grep -qE "^(${_team_filter})$"; then
-    echo "$author" >> "$temp_authors"
-  fi
-
-  # Get reviews for this PR
+# Worker: input is "<number>|<author>"; fetches that PR's reviews and emits
+# "<login> <state>" lines (excluding the PR author), applying the team filter
+# exactly as the serial version did.
+_rl_fetch_reviews() {
+  local num="${1%%|*}" author="${1#*|}"
+  local reviews
   reviews=$(gh api "repos/$REPO/pulls/$num/reviews" --paginate 2>/dev/null || echo "[]")
 
-  # Extract unique reviewers (excluding the PR author) and their decisions
-  if [[ -n "$_team_filter" ]]; then
+  if [[ -n "$_RL_TEAM_FILTER" ]]; then
     echo "$reviews" | jq -r --arg author "$author" \
       '.[] | select(.user.login != $author) | "\(.user.login) \(.state)"' \
-      | grep -E "^(${_team_filter}) " >> "$temp_reviews" || true
+      | grep -E "^(${_RL_TEAM_FILTER}) " || true
   else
     echo "$reviews" | jq -r --arg author "$author" \
-      '.[] | select(.user.login != $author) | "\(.user.login) \(.state)"' >> "$temp_reviews"
+      '.[] | select(.user.login != $author) | "\(.user.login) \(.state)"'
   fi
+}
+export REPO
+export _RL_TEAM_FILTER="$_team_filter"
 
-  total_prs=$((total_prs + 1))
-done
+# Run all per-PR review fetches in parallel; collect into the temp file.
+echo "$PR_JSON" \
+  | jq -r '.[] | "\(.number)|\(.author.login)"' \
+  | parallel_map _rl_fetch_reviews >> "$temp_reviews"
 
 if [[ ! -s "$temp_reviews" ]]; then
   if [[ "$JSON" == "true" ]]; then

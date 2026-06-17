@@ -58,6 +58,19 @@ set -- "${args[@]+"${args[@]}"}"
 
 source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 
+# parallel_map <worker_fn>
+#   Reads lines from stdin and runs <worker_fn> once per line, up to
+#   ENG_CONCURRENCY (default 8) at a time, concatenating their stdout.
+#   The worker is a normal shell function (serialized with declare -f,
+#   not export -f); each invocation receives the line as $1.
+#   Input fields should be '|'-separated and each worker should emit
+#   whole, short lines.
+parallel_map() {
+  local _worker="$1"
+  xargs -P "${ENG_CONCURRENCY:-8}" -I '{}' \
+    bash -c "$(declare -f "$_worker"); $_worker \"\$@\"" _ '{}'
+}
+
 resolve_repo "${1:-}" || { usage >&2; exit 1; }
 [[ "$_REPO_FROM_ARG" == true ]] && shift
 
@@ -177,6 +190,21 @@ if [[ "$JSON" == "false" ]]; then
   fi
 fi
 
+# Precompute the file count per PR in parallel (num -> count), so the
+# expensive per-PR `gh api .../files` calls run concurrently. The loop
+# below then reads these precomputed counts, preserving output and order.
+prefetch_file=$(mktemp)
+trap "rm -f $prefetch_file" EXIT
+
+_prs_fetch() {
+  local num="${1%%|*}"
+  local fc
+  fc=$(gh api "repos/$REPO/pulls/$num/files" --paginate 2>/dev/null | jq 'length')
+  echo "$num|$fc"
+}
+export REPO
+echo "$PR_JSON" | jq -r '.[] | "\(.number)|"' | parallel_map _prs_fetch > "$prefetch_file"
+
 # Analyze each PR.
 # NOTE: uses process substitution (done < <(...)) rather than a `| while`
 # pipe so the size_counts / size_total_times associative arrays and the
@@ -194,8 +222,8 @@ while IFS= read -r pr_b64; do
   author=$(echo "$pr" | jq -r '.author.login')
   url=$(echo "$pr" | jq -r '.url')
 
-  # Get file count
-  files_count=$(gh api "repos/$REPO/pulls/$num/files" --paginate | jq 'length')
+  # Look up the precomputed (parallel) file count for this PR
+  files_count=$(awk -F'|' -v n="$num" '$1==n {print $2; exit}' "$prefetch_file")
 
   # Calculate review time
   ts_created=$(parse_timestamp "$created")

@@ -92,18 +92,18 @@ total_prs=0
 
 [[ "$CSV" == "false" && "$JSON" == "false" ]] && echo "Fetching file changes per PR (this may take a moment) …"
 
-echo "$PR_JSON" | jq -r '.[] | @base64' | while IFS= read -r pr_b64; do
-  pr=$(echo "$pr_b64" | base64 --decode)
+# Worker: input is "<number>|<author>"; emits "<author>\t<filename>" lines.
+_lf_fetch_pr() {
+  local num="${1%%|*}" author="${1#*|}"
+  gh api "repos/$REPO/pulls/$num/files" --paginate 2>/dev/null \
+    | jq -r --arg author "$author" '.[] | "\($author)\t\(.filename)"'
+}
+export REPO
 
-  num=$(echo "$pr" | jq -r '.number')
-  author=$(echo "$pr" | jq -r '.author.login')
-
-  # Get files changed in this PR
-  gh api "repos/$REPO/pulls/$num/files" --paginate 2>/dev/null | \
-    jq -r --arg author "$author" '.[] | "\($author)\t\(.filename)"' >> "$temp_file"
-
-  total_prs=$((total_prs + 1))
-done
+# Run all per-PR fetches in parallel; collect into the temp file.
+echo "$PR_JSON" \
+  | jq -r '.[] | "\(.number)|\(.author.login)"' \
+  | parallel_map _lf_fetch_pr >> "$temp_file"
 
 if [[ ! -s "$temp_file" ]]; then
   if [[ "$JSON" == "true" ]]; then
