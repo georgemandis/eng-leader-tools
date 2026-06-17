@@ -195,6 +195,42 @@ agent_has_engleader() {
   esac
 }
 
+# unregister_agent <"name|kind|path">
+#   Removes the engleader registration. Honors ENG_MCP_DRY_RUN=1.
+#   JSON removal is surgical (only .mcpServers.engleader) and atomic
+#   (.tmp + mv); no backup — re-add with `eng mcp install`.
+unregister_agent() {
+  local entry="$1"
+  local name kind path
+  IFS='|' read -r name kind path <<<"$entry"
+
+  if [[ -n "${ENG_MCP_DRY_RUN:-}" ]]; then
+    if [[ "$kind" == "cli" ]]; then
+      echo "[dry-run] $name: claude mcp remove engleader -s user"
+    else
+      echo "[dry-run] $name: remove engleader from $path"
+    fi
+    return 0
+  fi
+
+  case "$kind" in
+    cli)
+      claude mcp remove engleader -s user \
+        && echo "✓ $name: engleader removed" \
+        || echo "✗ $name: claude mcp remove failed" >&2
+      ;;
+    json)
+      jq 'del(.mcpServers.engleader)' "$path" > "${path}.tmp" \
+        && mv "${path}.tmp" "$path" \
+        && echo "✓ $name: engleader removed ($path)" \
+        || echo "✗ $name: failed to update $path" >&2
+      ;;
+    *)
+      echo "✗ $name: unknown registration kind '$kind', skipped" >&2
+      ;;
+  esac
+}
+
 if [[ -z "${ENG_MCP_LIB:-}" ]]; then
   main "$@"
 fi

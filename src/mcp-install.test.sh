@@ -105,5 +105,43 @@ ok "agent_has_engleader false when engleader absent" '! agent_has_engleader "cur
 ok "agent_has_engleader false when file missing" '! agent_has_engleader "cursor|json|$HTMP/nope.json"'
 rm -rf "$HTMP"
 
+# --- unregister_agent (json) ---
+UTMP="$(mktemp -d)"
+ucfg="$UTMP/mcp.json"
+echo '{"mcpServers":{"engleader":{"command":"bun"},"engsight":{"command":"x"}},"other":1}' > "$ucfg"
+
+unregister_agent "cursor|json|$ucfg" >/dev/null
+ok "unregister removes engleader" '! jq -e ".mcpServers.engleader" "$ucfg" >/dev/null 2>&1'
+ok "unregister preserves peer engsight" 'jq -e ".mcpServers.engsight" "$ucfg" >/dev/null 2>&1'
+ok "unregister preserves other top-level key" '[[ "$(jq -r ".other" "$ucfg")" == "1" ]]'
+
+# sole entry -> leaves empty mcpServers object (no pruning)
+solecfg="$UTMP/sole.json"
+echo '{"mcpServers":{"engleader":{"command":"bun"}}}' > "$solecfg"
+unregister_agent "cursor|json|$solecfg" >/dev/null
+ok "unregister leaves empty mcpServers object" '[[ "$(jq -c ".mcpServers" "$solecfg")" == "{}" ]]'
+
+# no backup file is created
+ok "unregister creates no backup" '! ls "$ucfg".bak-* >/dev/null 2>&1'
+
+# dry-run mutates nothing
+drycfg="$UTMP/dry.json"
+echo '{"mcpServers":{"engleader":{"command":"bun"}}}' > "$drycfg"
+ENG_MCP_DRY_RUN=1 unregister_agent "cursor|json|$drycfg" >/dev/null
+ok "dry-run leaves engleader in place" 'jq -e ".mcpServers.engleader" "$drycfg" >/dev/null 2>&1'
+
+# cli path invokes claude mcp remove (fake claude logs args)
+ufb="$UTMP/bin"; mkdir -p "$ufb"
+cat > "$ufb/claude" <<'EOF'
+#!/bin/sh
+echo "$@" >> "$CLAUDE_LOG"
+EOF
+chmod +x "$ufb/claude"
+CLAUDE_LOG="$UTMP/claude.log" PATH="$ufb:$PATH" \
+  unregister_agent "claude-code|cli|" >/dev/null
+ok "cli unregister invokes claude mcp remove engleader" 'grep -q "mcp remove engleader" "$UTMP/claude.log"'
+
+rm -rf "$UTMP"
+
 echo "----"; echo "$PASS passed, $FAIL failed"
 [[ "$FAIL" -eq 0 ]]
