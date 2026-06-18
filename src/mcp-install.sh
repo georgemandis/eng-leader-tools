@@ -57,30 +57,36 @@ merge_json_config() {
     > "${cfg}.tmp" && mv "${cfg}.tmp" "$cfg"
 }
 
-# register_agent <"name|kind|path"> <server_path>
-#   Honors ENG_MCP_DRY_RUN=1 (print intended action, change nothing).
+# register_agent <"name|kind|path"> <eng-mcp-binary>
+#   Registers the engleader MCP server (a compiled binary) into an agent.
+#   Honors ENG_MCP_DRY_RUN=1. Errors (return 1) if the binary is missing.
 register_agent() {
-  local entry="$1" server="$2"
+  local entry="$1" bin="$2"
   local name kind path
   IFS='|' read -r name kind path <<<"$entry"
 
   if [[ -n "${ENG_MCP_DRY_RUN:-}" ]]; then
     if [[ "$kind" == "cli" ]]; then
-      echo "[dry-run] $name: claude mcp add engleader -s user -- bun run $server"
+      echo "[dry-run] $name: claude mcp add engleader -s user -- $bin"
     else
       echo "[dry-run] $name: merge engleader into $path"
     fi
     return 0
   fi
 
+  if [[ ! -x "$bin" && ! -f "$bin" ]]; then
+    echo "✗ eng-mcp not found at $bin. Run 'eng mcp build' (requires bun), or reinstall via brew/scoop." >&2
+    return 1
+  fi
+
   case "$kind" in
     cli)
-      claude mcp add engleader -s user -- bun run "$server" \
+      claude mcp add engleader -s user -- "$bin" \
         && echo "✓ $name registered" \
         || echo "✗ $name: claude mcp add failed" >&2
       ;;
     json)
-      merge_json_config "$path" "$server" \
+      merge_json_config "$path" "$bin" \
         && echo "✓ $name updated ($path)" \
         || echo "✗ $name: failed to update $path" >&2
       ;;

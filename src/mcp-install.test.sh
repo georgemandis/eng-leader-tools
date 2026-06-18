@@ -32,15 +32,15 @@ JTMP="$(mktemp -d)"
 cfg="$JTMP/mcp.json"
 echo '{"mcpServers":{"existing":{"command":"foo"}}}' > "$cfg"
 
-merge_json_config "$cfg" "/abs/mcp/index.ts" >/dev/null
+merge_json_config "$cfg" "/abs/eng-mcp" >/dev/null
 
 ok "adds engleader entry" 'grep -q "engleader" "$cfg"'
 ok "preserves existing entry" 'grep -q "existing" "$cfg"'
-ok "entry uses bun run with the server path" 'grep -q "/abs/mcp/index.ts" "$cfg"'
+ok "json entry references the eng-mcp binary" 'grep -q "/abs/eng-mcp" "$cfg"'
 ok "creates a timestamped backup" 'ls "$cfg".bak-* >/dev/null 2>&1'
 
 # Idempotency: second merge does not add a duplicate.
-merge_json_config "$cfg" "/abs/mcp/index.ts" >/dev/null
+merge_json_config "$cfg" "/abs/eng-mcp" >/dev/null
 count="$(grep -o engleader "$cfg" | wc -l | tr -d ' ')"
 ok "idempotent — engleader appears once" '[[ "$count" == "1" ]]'
 
@@ -56,19 +56,22 @@ echo "$@" >> "$CLAUDE_LOG"
 EOF
 chmod +x "$fb/claude"
 
+# A real binary file so the missing-binary guard passes in non-dry-run.
+realbin="$RTMP/eng-mcp"; : > "$realbin"; chmod +x "$realbin"
+
 CLAUDE_LOG="$RTMP/claude.log" PATH="$fb:$PATH" \
-  register_agent "claude-code|cli|" "/abs/mcp/index.ts" >/dev/null
+  register_agent "claude-code|cli|" "$realbin" >/dev/null
 ok "cli agent invokes claude mcp add" 'grep -q "mcp add engleader" "$RTMP/claude.log"'
-ok "cli registration references bun run + path" 'grep -q "bun run /abs/mcp/index.ts" "$RTMP/claude.log"'
+ok "cli registration references the eng-mcp binary" 'grep -q "mcp add engleader" "$RTMP/claude.log" && grep -q "$realbin" "$RTMP/claude.log"'
 
 # json agent path goes through merge_json_config
 jcfg="$RTMP/cursor.json"; echo '{}' > "$jcfg"
-register_agent "cursor|json|$jcfg" "/abs/mcp/index.ts" >/dev/null
+register_agent "cursor|json|$jcfg" "$realbin" >/dev/null
 ok "json agent merges config" 'grep -q engleader "$jcfg"'
 
 # --- dry-run writes nothing ---
 dcfg="$RTMP/dry.json"; echo '{}' > "$dcfg"
-ENG_MCP_DRY_RUN=1 register_agent "cursor|json|$dcfg" "/abs/mcp/index.ts" >/dev/null
+ENG_MCP_DRY_RUN=1 register_agent "cursor|json|$dcfg" "/abs/eng-mcp" >/dev/null
 ok "dry-run leaves json untouched" '! grep -q engleader "$dcfg"'
 ok "dry-run creates no backup" '! ls "$dcfg".bak-* >/dev/null 2>&1'
 
@@ -92,8 +95,10 @@ ok "main --agent=cursor leaves config unmutated in dry-run" '! grep -q engleader
 rm -rf "$MTMP"
 
 # --- register_agent unknown kind ---
-OUT_UNK="$(register_agent "foo|bogus|" "/x/index.ts" 2>&1)"
+UKTMP="$(mktemp -d)"; ukbin="$UKTMP/eng-mcp"; : > "$ukbin"; chmod +x "$ukbin"
+OUT_UNK="$(register_agent "foo|bogus|" "$ukbin" 2>&1)"
 ok "unknown kind is skipped with an error" '[[ "$OUT_UNK" == *"unknown registration kind"* ]]'
+rm -rf "$UKTMP"
 
 # --- agent_has_engleader probe ---
 HTMP="$(mktemp -d)"
@@ -247,6 +252,24 @@ ok "uninstall choose prompts cursor (agent #2 not eaten)" '[[ "$OUT_CHOOSE_UNINS
 ok "uninstall choose prompts opencode (agent #3 not eaten)" '[[ "$OUT_CHOOSE_UNINST" == *"Remove from opencode"* ]]'
 ok "uninstall choose dry-runs ALL agents" '[[ "$OUT_CHOOSE_UNINST" == *"[dry-run] claude-code"* && "$OUT_CHOOSE_UNINST" == *"[dry-run] cursor"* && "$OUT_CHOOSE_UNINST" == *"[dry-run] opencode"* ]]'
 rm -rf "$CTMP"
+
+# --- register_agent guards against a missing eng-mcp binary (non-dry-run) ---
+# Earlier in-process dry-run calls (e.g. uninstall_main --dry-run) export
+# ENG_MCP_DRY_RUN into this runner; clear it so the guard path is exercised.
+unset ENG_MCP_DRY_RUN
+GTMP="$(mktemp -d)"
+gfb="$GTMP/bin"; mkdir -p "$gfb"
+cat > "$gfb/claude" <<'EOF'
+#!/bin/sh
+echo "$@" >> "$CLAUDE_LOG"
+EOF
+chmod +x "$gfb/claude"
+OUT_MISSING="$(CLAUDE_LOG="$GTMP/c.log" PATH="$gfb:$PATH" register_agent "claude-code|cli|" "$GTMP/nope-eng-mcp" 2>&1)"; rc=$?
+ok "missing binary -> error" '[[ "$rc" -ne 0 && "$OUT_MISSING" == *"eng-mcp not found"* ]]'
+ok "missing binary -> did NOT call claude" '[[ ! -f "$GTMP/c.log" ]]'
+OUT_DRYMISS="$(ENG_MCP_DRY_RUN=1 PATH="$gfb:$PATH" register_agent "claude-code|cli|" "$GTMP/nope-eng-mcp" 2>&1)"
+ok "dry-run prints even if binary absent" '[[ "$OUT_DRYMISS" == *"[dry-run] claude-code"* ]]'
+rm -rf "$GTMP"
 
 # --- mcp_bin_path resolution ---
 ok "mcp_bin_path honors ENG_MCP_BIN override" '[[ "$(ENG_MCP_BIN=/custom/eng-mcp mcp_bin_path)" == "/custom/eng-mcp" ]]'
