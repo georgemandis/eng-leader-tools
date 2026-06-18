@@ -36,11 +36,11 @@ detect_agents() {
   return 0
 }
 
-# merge_json_config <config_path> <server_path>
+# merge_json_config <config_path> <eng-mcp-binary>
 #   Backs up the file, then idempotently adds an `engleader` MCP entry under
-#   the standard `.mcpServers` key. Uses bun to run the server.
+#   the standard `.mcpServers` key, pointing at the compiled eng-mcp binary.
 merge_json_config() {
-  local cfg="$1" server="$2"
+  local cfg="$1" bin="$2"
   local ts; ts="$(date -u +%Y%m%d%H%M%S)"
   cp "$cfg" "${cfg}.bak-${ts}" || {
     echo "Error: could not back up $cfg; aborting merge." >&2
@@ -52,8 +52,8 @@ merge_json_config() {
   [[ -z "${current// }" ]] && current="{}"
 
   echo "$current" | jq \
-    --arg path "$server" \
-    '.mcpServers.engleader = { command: "bun", args: ["run", $path] }' \
+    --arg bin "$bin" \
+    '.mcpServers.engleader = { command: $bin, args: [] }' \
     > "${cfg}.tmp" && mv "${cfg}.tmp" "$cfg"
 }
 

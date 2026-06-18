@@ -275,5 +275,12 @@ rm -rf "$GTMP"
 ok "mcp_bin_path honors ENG_MCP_BIN override" '[[ "$(ENG_MCP_BIN=/custom/eng-mcp mcp_bin_path)" == "/custom/eng-mcp" ]]'
 ok "mcp_bin_path falls back to <dir>/eng-mcp" '[[ "$(unset ENG_MCP_BIN; mcp_bin_path)" == */eng-mcp ]]'
 
+# --- merge_json_config writes {command:<bin>, args:[]} ---
+JS2="$(mktemp -d)"; jc="$JS2/m.json"; echo '{}' > "$jc"
+merge_json_config "$jc" "/abs/eng-mcp" >/dev/null
+ok "json entry command is the binary" '[[ "$(jq -r ".mcpServers.engleader.command" "$jc")" == "/abs/eng-mcp" ]]'
+ok "json entry args is empty array" '[[ "$(jq -c ".mcpServers.engleader.args" "$jc")" == "[]" ]]'
+rm -rf "$JS2"
+
 echo "----"; echo "$PASS passed, $FAIL failed"
 [[ "$FAIL" -eq 0 ]]
