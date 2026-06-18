@@ -8,14 +8,15 @@
 # would abort the script under `set -e`.
 set -uo pipefail
 
-# Path to the MCP server entrypoint, resolved relative to this script.
-# eng exports ENG_MCP_SERVER when it dispatches; fall back to ../mcp/index.ts.
-mcp_server_path() {
-  if [[ -n "${ENG_MCP_SERVER:-}" ]]; then
-    echo "$ENG_MCP_SERVER"
+# mcp_bin_path
+#   Resolve the compiled eng-mcp binary: ENG_MCP_BIN override, else the
+#   eng-mcp sitting beside this script's parent dir (libexec).
+mcp_bin_path() {
+  if [[ -n "${ENG_MCP_BIN:-}" ]]; then
+    echo "$ENG_MCP_BIN"
   else
     local here; here="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/.." && pwd)"
-    echo "$here/mcp/index.ts"
+    echo "$here/eng-mcp"
   fi
 }
 
@@ -91,7 +92,7 @@ register_agent() {
 
 # Print the planned action for each detected agent and prompt for selection.
 main() {
-  local server; server="$(mcp_server_path)"
+  local bin; bin="$(mcp_bin_path)"
 
   if ! command -v bun >/dev/null 2>&1; then
     echo "Warning: 'bun' is not installed — the server needs it to run." >&2
@@ -141,13 +142,13 @@ main() {
       if [[ "${line%%|*}" == "$target_agent" ]]; then entry="$line"; break; fi
     done <<<"$detected"
     [[ -z "$entry" ]] && { echo "Agent '$target_agent' not detected." >&2; return 1; }
-    register_agent "$entry" "$server"
+    register_agent "$entry" "$bin"
     return 0
   fi
   if [[ -n "$install_all" ]]; then
     while IFS= read -r entry; do
       [[ -z "$entry" ]] && continue
-      register_agent "$entry" "$server"
+      register_agent "$entry" "$bin"
     done <<<"$detected"
     return 0
   fi
@@ -159,7 +160,7 @@ main() {
     a|A)
       while IFS= read -r entry; do
         [[ -z "$entry" ]] && continue
-        register_agent "$entry" "$server"
+        register_agent "$entry" "$bin"
       done <<<"$detected" ;;
     c|C)
       # Feed the loop on FD 3 so stdin stays the terminal for `read -r yn`
@@ -168,7 +169,7 @@ main() {
         [[ -z "$name" ]] && continue
         printf "Install into %s? [y/N]: " "$name"
         read -r yn
-        [[ "$yn" == "y" || "$yn" == "Y" ]] && register_agent "$name|$kind|$path" "$server"
+        [[ "$yn" == "y" || "$yn" == "Y" ]] && register_agent "$name|$kind|$path" "$bin"
       done 3<<<"$detected" ;;
     *)
       echo "Aborted." ;;

@@ -248,5 +248,9 @@ ok "uninstall choose prompts opencode (agent #3 not eaten)" '[[ "$OUT_CHOOSE_UNI
 ok "uninstall choose dry-runs ALL agents" '[[ "$OUT_CHOOSE_UNINST" == *"[dry-run] claude-code"* && "$OUT_CHOOSE_UNINST" == *"[dry-run] cursor"* && "$OUT_CHOOSE_UNINST" == *"[dry-run] opencode"* ]]'
 rm -rf "$CTMP"
 
+# --- mcp_bin_path resolution ---
+ok "mcp_bin_path honors ENG_MCP_BIN override" '[[ "$(ENG_MCP_BIN=/custom/eng-mcp mcp_bin_path)" == "/custom/eng-mcp" ]]'
+ok "mcp_bin_path falls back to <dir>/eng-mcp" '[[ "$(unset ENG_MCP_BIN; mcp_bin_path)" == */eng-mcp ]]'
+
 echo "----"; echo "$PASS passed, $FAIL failed"
 [[ "$FAIL" -eq 0 ]]
