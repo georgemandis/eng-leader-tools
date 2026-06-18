@@ -217,5 +217,36 @@ OUT_BARE="$(HOME="$DTMP" PATH="$dfb:$PATH" bash "$SCRIPT_DIR/mcp-install.sh" --d
 ok "entry dispatch: bare flags still reach main" '[[ "$OUT_BARE" == *"No supported agents detected"* || "$OUT_BARE" == *"Detected agents"* ]]'
 rm -rf "$DTMP"
 
+# --- interactive 'choose' prompts EVERY agent (regression: read yn must not
+#     steal the loop's here-string stdin, which made it exit after agent #1) ---
+CTMP="$(mktemp -d)"
+# fake claude (registered) + two json agents -> deterministic 3-agent list.
+cfb="$CTMP/bin"; mkdir -p "$cfb"
+cat > "$cfb/claude" <<'EOF'
+#!/bin/sh
+case "$1 $2" in
+  "mcp get") exit 0 ;;     # engleader is registered (for uninstall detection)
+  *) exit 0 ;;
+esac
+EOF
+chmod +x "$cfb/claude"
+mkdir -p "$CTMP/.cursor";          echo '{"mcpServers":{"engleader":{"command":"bun"}}}' > "$CTMP/.cursor/mcp.json"
+mkdir -p "$CTMP/.config/opencode"; echo '{"mcpServers":{"engleader":{"command":"bun"}}}' > "$CTMP/.config/opencode/opencode.json"
+
+# install: choose, answer y to ALL three agents. Dry-run so nothing mutates.
+OUT_CHOOSE_INST="$(printf 'c\ny\ny\ny\n' | HOME="$CTMP" PATH="$cfb:$PATH" ENG_MCP_SERVER=/x/index.ts bash "$SCRIPT_DIR/mcp-install.sh" install --dry-run 2>&1)"
+ok "install choose prompts claude-code (agent #1)" '[[ "$OUT_CHOOSE_INST" == *"Install into claude-code"* ]]'
+ok "install choose prompts cursor (agent #2 not eaten)" '[[ "$OUT_CHOOSE_INST" == *"Install into cursor"* ]]'
+ok "install choose prompts opencode (agent #3 not eaten)" '[[ "$OUT_CHOOSE_INST" == *"Install into opencode"* ]]'
+ok "install choose dry-runs ALL agents" '[[ "$OUT_CHOOSE_INST" == *"[dry-run] claude-code"* && "$OUT_CHOOSE_INST" == *"[dry-run] cursor"* && "$OUT_CHOOSE_INST" == *"[dry-run] opencode"* ]]'
+
+# uninstall: choose, answer y to ALL three (all have engleader registered).
+OUT_CHOOSE_UNINST="$(printf 'c\ny\ny\ny\n' | HOME="$CTMP" PATH="$cfb:$PATH" ENG_MCP_SERVER=/x/index.ts bash "$SCRIPT_DIR/mcp-install.sh" uninstall --dry-run 2>&1)"
+ok "uninstall choose prompts claude-code (agent #1)" '[[ "$OUT_CHOOSE_UNINST" == *"Remove from claude-code"* ]]'
+ok "uninstall choose prompts cursor (agent #2 not eaten)" '[[ "$OUT_CHOOSE_UNINST" == *"Remove from cursor"* ]]'
+ok "uninstall choose prompts opencode (agent #3 not eaten)" '[[ "$OUT_CHOOSE_UNINST" == *"Remove from opencode"* ]]'
+ok "uninstall choose dry-runs ALL agents" '[[ "$OUT_CHOOSE_UNINST" == *"[dry-run] claude-code"* && "$OUT_CHOOSE_UNINST" == *"[dry-run] cursor"* && "$OUT_CHOOSE_UNINST" == *"[dry-run] opencode"* ]]'
+rm -rf "$CTMP"
+
 echo "----"; echo "$PASS passed, $FAIL failed"
 [[ "$FAIL" -eq 0 ]]
