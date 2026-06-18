@@ -162,12 +162,14 @@ main() {
         register_agent "$entry" "$server"
       done <<<"$detected" ;;
     c|C)
-      while IFS='|' read -r name kind path; do
+      # Feed the loop on FD 3 so stdin stays the terminal for `read -r yn`
+      # (otherwise read yn consumes the next agent line from the here-string).
+      while IFS='|' read -r name kind path <&3; do
         [[ -z "$name" ]] && continue
         printf "Install into %s? [y/N]: " "$name"
         read -r yn
         [[ "$yn" == "y" || "$yn" == "Y" ]] && register_agent "$name|$kind|$path" "$server"
-      done <<<"$detected" ;;
+      done 3<<<"$detected" ;;
     *)
       echo "Aborted." ;;
   esac
@@ -306,12 +308,14 @@ uninstall_main() {
         unregister_agent "$entry"
       done <<<"$registered" ;;
     c|C)
-      while IFS='|' read -r name kind path; do
+      # Feed the loop on FD 3 so stdin stays the terminal for `read -r yn`
+      # (otherwise read yn consumes the next agent line from the here-string).
+      while IFS='|' read -r name kind path <&3; do
         [[ -z "$name" ]] && continue
         printf "Remove from %s? [y/N]: " "$name"
         read -r yn
         [[ "$yn" == "y" || "$yn" == "Y" ]] && unregister_agent "$name|$kind|$path"
-      done <<<"$registered" ;;
+      done 3<<<"$registered" ;;
     *)
       echo "Aborted." ;;
   esac
