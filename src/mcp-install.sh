@@ -8,14 +8,15 @@
 # would abort the script under `set -e`.
 set -uo pipefail
 
-# Path to the MCP server entrypoint, resolved relative to this script.
-# eng exports ENG_MCP_SERVER when it dispatches; fall back to ../mcp/index.ts.
-mcp_server_path() {
-  if [[ -n "${ENG_MCP_SERVER:-}" ]]; then
-    echo "$ENG_MCP_SERVER"
+# mcp_bin_path
+#   Resolve the compiled eng-mcp binary: ENG_MCP_BIN override, else the
+#   eng-mcp sitting beside this script's parent dir (libexec).
+mcp_bin_path() {
+  if [[ -n "${ENG_MCP_BIN:-}" ]]; then
+    echo "$ENG_MCP_BIN"
   else
     local here; here="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/.." && pwd)"
-    echo "$here/mcp/index.ts"
+    echo "$here/eng-mcp"
   fi
 }
 
@@ -35,11 +36,11 @@ detect_agents() {
   return 0
 }
 
-# merge_json_config <config_path> <server_path>
+# merge_json_config <config_path> <eng-mcp-binary>
 #   Backs up the file, then idempotently adds an `engleader` MCP entry under
-#   the standard `.mcpServers` key. Uses bun to run the server.
+#   the standard `.mcpServers` key, pointing at the compiled eng-mcp binary.
 merge_json_config() {
-  local cfg="$1" server="$2"
+  local cfg="$1" bin="$2"
   local ts; ts="$(date -u +%Y%m%d%H%M%S)"
   cp "$cfg" "${cfg}.bak-${ts}" || {
     echo "Error: could not back up $cfg; aborting merge." >&2
@@ -51,35 +52,41 @@ merge_json_config() {
   [[ -z "${current// }" ]] && current="{}"
 
   echo "$current" | jq \
-    --arg path "$server" \
-    '.mcpServers.engleader = { command: "bun", args: ["run", $path] }' \
+    --arg bin "$bin" \
+    '.mcpServers.engleader = { command: $bin, args: [] }' \
     > "${cfg}.tmp" && mv "${cfg}.tmp" "$cfg"
 }
 
-# register_agent <"name|kind|path"> <server_path>
-#   Honors ENG_MCP_DRY_RUN=1 (print intended action, change nothing).
+# register_agent <"name|kind|path"> <eng-mcp-binary>
+#   Registers the engleader MCP server (a compiled binary) into an agent.
+#   Honors ENG_MCP_DRY_RUN=1. Errors (return 1) if the binary is missing.
 register_agent() {
-  local entry="$1" server="$2"
+  local entry="$1" bin="$2"
   local name kind path
   IFS='|' read -r name kind path <<<"$entry"
 
   if [[ -n "${ENG_MCP_DRY_RUN:-}" ]]; then
     if [[ "$kind" == "cli" ]]; then
-      echo "[dry-run] $name: claude mcp add engleader -s user -- bun run $server"
+      echo "[dry-run] $name: claude mcp add engleader -s user -- $bin"
     else
       echo "[dry-run] $name: merge engleader into $path"
     fi
     return 0
   fi
 
+  if [[ ! -x "$bin" && ! -f "$bin" ]]; then
+    echo "✗ eng-mcp not found at $bin. Run 'eng mcp build' (requires bun), or reinstall via brew/scoop." >&2
+    return 1
+  fi
+
   case "$kind" in
     cli)
-      claude mcp add engleader -s user -- bun run "$server" \
+      claude mcp add engleader -s user -- "$bin" \
         && echo "✓ $name registered" \
         || echo "✗ $name: claude mcp add failed" >&2
       ;;
     json)
-      merge_json_config "$path" "$server" \
+      merge_json_config "$path" "$bin" \
         && echo "✓ $name updated ($path)" \
         || echo "✗ $name: failed to update $path" >&2
       ;;
@@ -91,13 +98,10 @@ register_agent() {
 
 # Print the planned action for each detected agent and prompt for selection.
 main() {
-  local server; server="$(mcp_server_path)"
-
-  if ! command -v bun >/dev/null 2>&1; then
-    echo "Warning: 'bun' is not installed — the server needs it to run." >&2
-    echo "Install Bun from https://bun.sh, then re-run 'eng mcp install'." >&2
-    echo >&2
-  fi
+  local bin; bin="$(mcp_bin_path)"
+  # Note: the registered server is a self-contained compiled binary — no bun is
+  # needed at runtime. A missing binary is caught per-agent by register_agent's
+  # guard (which points the user at `eng mcp build` / reinstall).
 
   local dry_run="" target_agent="" install_all=""
   for arg in "$@"; do
@@ -141,13 +145,13 @@ main() {
       if [[ "${line%%|*}" == "$target_agent" ]]; then entry="$line"; break; fi
     done <<<"$detected"
     [[ -z "$entry" ]] && { echo "Agent '$target_agent' not detected." >&2; return 1; }
-    register_agent "$entry" "$server"
+    register_agent "$entry" "$bin"
     return 0
   fi
   if [[ -n "$install_all" ]]; then
     while IFS= read -r entry; do
       [[ -z "$entry" ]] && continue
-      register_agent "$entry" "$server"
+      register_agent "$entry" "$bin"
     done <<<"$detected"
     return 0
   fi
@@ -159,7 +163,7 @@ main() {
     a|A)
       while IFS= read -r entry; do
         [[ -z "$entry" ]] && continue
-        register_agent "$entry" "$server"
+        register_agent "$entry" "$bin"
       done <<<"$detected" ;;
     c|C)
       # Feed the loop on FD 3 so stdin stays the terminal for `read -r yn`
@@ -168,7 +172,7 @@ main() {
         [[ -z "$name" ]] && continue
         printf "Install into %s? [y/N]: " "$name"
         read -r yn
-        [[ "$yn" == "y" || "$yn" == "Y" ]] && register_agent "$name|$kind|$path" "$server"
+        [[ "$yn" == "y" || "$yn" == "Y" ]] && register_agent "$name|$kind|$path" "$bin"
       done 3<<<"$detected" ;;
     *)
       echo "Aborted." ;;

@@ -1,0 +1,58 @@
+name: mcp-release
+on:
+  push:
+    tags: ["v*"]
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: macos-latest,   target: bun-darwin-arm64, asset: macos-aarch64 }
+          - { os: macos-13,       target: bun-darwin-x64,   asset: macos-x86_64 }
+          - { os: ubuntu-latest,  target: bun-linux-x64,    asset: linux-x86_64 }
+          - { os: windows-latest, target: bun-windows-x64,  asset: windows-x86_64 }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - name: Install deps
+        working-directory: mcp
+        run: bun install
+      - name: Compile
+        working-directory: mcp
+        shell: bash
+        run: bun build index.ts --compile --target=${{ matrix.target }} --outfile eng-mcp${{ runner.os == 'Windows' && '.exe' || '' }}
+      - name: Smoke-run (non-Windows)
+        if: runner.os != 'Windows'
+        working-directory: mcp
+        shell: bash
+        run: |
+          out=$(printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' | ENG_BIN=/bin/true ./eng-mcp 2>/dev/null || true)
+          echo "$out" | grep -q eng_lead_time || { echo "smoke test failed: $out"; exit 1; }
+      - name: Smoke-run (Windows)
+        if: runner.os == 'Windows'
+        working-directory: mcp
+        shell: bash
+        run: |
+          out=$(printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' | ENG_BIN=/bin/true ./eng-mcp.exe 2>/dev/null || true)
+          echo "$out" | grep -q eng_lead_time || { echo "smoke test failed: $out"; exit 1; }
+      - name: Package
+        working-directory: mcp
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          NAME="eng-mcp-v${VERSION}-${{ matrix.asset }}"
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            7z a "${NAME}.zip" eng-mcp.exe
+          else
+            tar -czf "${NAME}.tar.gz" eng-mcp
+          fi
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          files: |
+            mcp/eng-mcp-v*-*.tar.gz
+            mcp/eng-mcp-v*-*.zip

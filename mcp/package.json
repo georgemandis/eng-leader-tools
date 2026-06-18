@@ -5,6 +5,9 @@
   "module": "index.ts",
   "type": "module",
   "private": true,
+  "scripts": {
+    "build": "bun install && bun build index.ts --compile --outfile eng-mcp"
+  },
   "devDependencies": {
     "@types/bun": "latest"
   },

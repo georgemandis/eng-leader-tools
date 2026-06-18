@@ -262,7 +262,7 @@ case "${1:-}" in
     case "$sub" in
       install)
         shift 2>/dev/null || true
-        export ENG_MCP_SERVER="${SCRIPT_DIR}/mcp/index.ts"
+        export ENG_MCP_BIN="${SCRIPT_DIR}/eng-mcp"
         # --dry-run is stripped by eng's global pre-processing; re-add it so
         # the installer sees it and only prints intended actions.
         if [[ "$_dry_run" == "true" ]]; then
@@ -272,15 +272,27 @@ case "${1:-}" in
         ;;
       uninstall)
         shift 2>/dev/null || true
-        export ENG_MCP_SERVER="${SCRIPT_DIR}/mcp/index.ts"
+        export ENG_MCP_BIN="${SCRIPT_DIR}/eng-mcp"
         # --dry-run is stripped by eng's global pre-processing; re-add it.
         if [[ "$_dry_run" == "true" ]]; then
           exec bash "${SCRIPT_DIR}/src/mcp-install.sh" uninstall "$@" --dry-run
         fi
         exec bash "${SCRIPT_DIR}/src/mcp-install.sh" uninstall "$@"
         ;;
+      build)
+        if ! command -v bun >/dev/null 2>&1; then
+          echo "Error: 'bun' is required to build the MCP server. Install it from https://bun.sh" >&2
+          exit 1
+        fi
+        echo "Building eng-mcp from ${SCRIPT_DIR}/mcp ..."
+        ( cd "${SCRIPT_DIR}/mcp" && bun install && bun build index.ts --compile --outfile "${SCRIPT_DIR}/eng-mcp" ) || {
+          echo "Error: eng-mcp build failed" >&2
+          exit 1
+        }
+        echo "✓ Built ${SCRIPT_DIR}/eng-mcp"
+        ;;
       -h|--help|help|"")
-        echo "Usage: eng mcp <install|uninstall> [--all] [--agent <name>] [--dry-run]"
+        echo "Usage: eng mcp <install|uninstall|build> [--all] [--agent <name>] [--dry-run]"
         ;;
       *)
         echo "Unknown 'eng mcp' subcommand: $sub" >&2
