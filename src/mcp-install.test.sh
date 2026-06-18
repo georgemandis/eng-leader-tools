@@ -82,13 +82,13 @@ MTMP="$(mktemp -d)"
 mkdir -p "$MTMP/.cursor"; echo '{}' > "$MTMP/.cursor/mcp.json"
 mfb="$MTMP/bin"; mkdir -p "$mfb"; printf '#!/bin/sh\ntrue\n' > "$mfb/claude"; chmod +x "$mfb/claude"
 
-OUT_EQ="$(HOME="$MTMP" PATH="$mfb:$PATH" ENG_MCP_SERVER=/x/index.ts main --agent=cursor --dry-run 2>&1)"
+OUT_EQ="$(HOME="$MTMP" PATH="$mfb:$PATH" ENG_MCP_BIN=/x/eng-mcp main --agent=cursor --dry-run 2>&1)"
 ok "main --agent=cursor selects cursor (dry-run)" '[[ "$OUT_EQ" == *"[dry-run] cursor"* ]]'
 
-OUT_SP="$(HOME="$MTMP" PATH="$mfb:$PATH" ENG_MCP_SERVER=/x/index.ts main --agent cursor --dry-run 2>&1)"
+OUT_SP="$(HOME="$MTMP" PATH="$mfb:$PATH" ENG_MCP_BIN=/x/eng-mcp main --agent cursor --dry-run 2>&1)"
 ok "main --agent cursor (space form) selects cursor (dry-run)" '[[ "$OUT_SP" == *"[dry-run] cursor"* ]]'
 
-OUT_BOGUS="$(HOME="$MTMP" PATH="$mfb:$PATH" ENG_MCP_SERVER=/x/index.ts main --agent bogus --dry-run 2>&1)"; rc=$?
+OUT_BOGUS="$(HOME="$MTMP" PATH="$mfb:$PATH" ENG_MCP_BIN=/x/eng-mcp main --agent bogus --dry-run 2>&1)"; rc=$?
 ok "main --agent bogus errors" '[[ "$rc" -ne 0 && "$OUT_BOGUS" == *"not detected"* ]]'
 
 ok "main --agent=cursor leaves config unmutated in dry-run" '! grep -q engleader "$MTMP/.cursor/mcp.json"'
@@ -239,14 +239,14 @@ mkdir -p "$CTMP/.cursor";          echo '{"mcpServers":{"engleader":{"command":"
 mkdir -p "$CTMP/.config/opencode"; echo '{"mcpServers":{"engleader":{"command":"bun"}}}' > "$CTMP/.config/opencode/opencode.json"
 
 # install: choose, answer y to ALL three agents. Dry-run so nothing mutates.
-OUT_CHOOSE_INST="$(printf 'c\ny\ny\ny\n' | HOME="$CTMP" PATH="$cfb:$PATH" ENG_MCP_SERVER=/x/index.ts bash "$SCRIPT_DIR/mcp-install.sh" install --dry-run 2>&1)"
+OUT_CHOOSE_INST="$(printf 'c\ny\ny\ny\n' | HOME="$CTMP" PATH="$cfb:$PATH" ENG_MCP_BIN=/x/eng-mcp bash "$SCRIPT_DIR/mcp-install.sh" install --dry-run 2>&1)"
 ok "install choose prompts claude-code (agent #1)" '[[ "$OUT_CHOOSE_INST" == *"Install into claude-code"* ]]'
 ok "install choose prompts cursor (agent #2 not eaten)" '[[ "$OUT_CHOOSE_INST" == *"Install into cursor"* ]]'
 ok "install choose prompts opencode (agent #3 not eaten)" '[[ "$OUT_CHOOSE_INST" == *"Install into opencode"* ]]'
 ok "install choose dry-runs ALL agents" '[[ "$OUT_CHOOSE_INST" == *"[dry-run] claude-code"* && "$OUT_CHOOSE_INST" == *"[dry-run] cursor"* && "$OUT_CHOOSE_INST" == *"[dry-run] opencode"* ]]'
 
 # uninstall: choose, answer y to ALL three (all have engleader registered).
-OUT_CHOOSE_UNINST="$(printf 'c\ny\ny\ny\n' | HOME="$CTMP" PATH="$cfb:$PATH" ENG_MCP_SERVER=/x/index.ts bash "$SCRIPT_DIR/mcp-install.sh" uninstall --dry-run 2>&1)"
+OUT_CHOOSE_UNINST="$(printf 'c\ny\ny\ny\n' | HOME="$CTMP" PATH="$cfb:$PATH" ENG_MCP_BIN=/x/eng-mcp bash "$SCRIPT_DIR/mcp-install.sh" uninstall --dry-run 2>&1)"
 ok "uninstall choose prompts claude-code (agent #1)" '[[ "$OUT_CHOOSE_UNINST" == *"Remove from claude-code"* ]]'
 ok "uninstall choose prompts cursor (agent #2 not eaten)" '[[ "$OUT_CHOOSE_UNINST" == *"Remove from cursor"* ]]'
 ok "uninstall choose prompts opencode (agent #3 not eaten)" '[[ "$OUT_CHOOSE_UNINST" == *"Remove from opencode"* ]]'

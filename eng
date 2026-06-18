@@ -262,7 +262,7 @@ case "${1:-}" in
     case "$sub" in
       install)
         shift 2>/dev/null || true
-        export ENG_MCP_SERVER="${SCRIPT_DIR}/mcp/index.ts"
+        export ENG_MCP_BIN="${SCRIPT_DIR}/eng-mcp"
         # --dry-run is stripped by eng's global pre-processing; re-add it so
         # the installer sees it and only prints intended actions.
         if [[ "$_dry_run" == "true" ]]; then
@@ -272,7 +272,7 @@ case "${1:-}" in
         ;;
       uninstall)
         shift 2>/dev/null || true
-        export ENG_MCP_SERVER="${SCRIPT_DIR}/mcp/index.ts"
+        export ENG_MCP_BIN="${SCRIPT_DIR}/eng-mcp"
         # --dry-run is stripped by eng's global pre-processing; re-add it.
         if [[ "$_dry_run" == "true" ]]; then
           exec bash "${SCRIPT_DIR}/src/mcp-install.sh" uninstall "$@" --dry-run
