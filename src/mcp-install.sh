@@ -99,12 +99,9 @@ register_agent() {
 # Print the planned action for each detected agent and prompt for selection.
 main() {
   local bin; bin="$(mcp_bin_path)"
-
-  if ! command -v bun >/dev/null 2>&1; then
-    echo "Warning: 'bun' is not installed — the server needs it to run." >&2
-    echo "Install Bun from https://bun.sh, then re-run 'eng mcp install'." >&2
-    echo >&2
-  fi
+  # Note: the registered server is a self-contained compiled binary — no bun is
+  # needed at runtime. A missing binary is caught per-agent by register_agent's
+  # guard (which points the user at `eng mcp build` / reinstall).
 
   local dry_run="" target_agent="" install_all=""
   for arg in "$@"; do
