@@ -161,10 +161,11 @@ while IFS= read -r pr_b64; do
   if [[ "$JSON" == "true" ]]; then
     pr_records+=("$(jq -n \
       --argjson number "$num" \
+      --arg title "$title" \
       --arg author "$author" \
       --argjson files_changed "$files_count" \
       --arg url "$url" \
-      '{number: $number, author: $author, files_changed: $files_changed, url: $url}')")
+      '{number: $number, title: $title, author: $author, files_changed: $files_changed, url: $url}')")
   elif [[ "$CSV" == "true" ]]; then
     csv_title=$(echo "$title" | sed 's/"/""/g')
     printf "%s,%s,%s,\"%s\",%s\n" "$num" "$files_count" "$author" "$csv_title" "$url"

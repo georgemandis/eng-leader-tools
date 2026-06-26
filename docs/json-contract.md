@@ -54,7 +54,7 @@ Codes: `AUTH`, `NOT_FOUND`, `RATE_LIMIT`, `BAD_ARGS`, `DEP_MISSING`, `UNKNOWN`.
 | `review-time` | `review-time` | PR count | `count`, `avg_time_to_first_review_seconds`, `avg_time_to_merge_seconds`, `prs[]` (`number`, `title`, `author`, `time_to_first_review_seconds` (null if unreviewed), `time_to_merge_seconds`, `url`) |
 | `pr-size` | `pr-size` | null | `sample_count`, `buckets[]` (`size`, `count`, `avg_review_seconds`), `total_additions`, `total_deletions` |
 | `stale-prs` | `stale-prs` | null | `open_count`, `buckets[]` (`label`, `count`), `prs[]` (`number`, `author`, `age_days`, `is_draft`, `title`, `url`) |
-| `files-per-pr` | `files-per-pr` | null | `count`, `avg_files`, `median_files`, `prs[]` (`number`, `author`, `files_changed`, `url`) |
+| `files-per-pr` | `files-per-pr` | null | `count`, `avg_files`, `median_files`, `prs[]` (`number`, `title`, `author`, `files_changed`, `url`) |
 | `deploy-frequency` | `deploy-frequency` | days arg | `window_days`, `deploy_count`, `deploys_per_day`, `series[]` (`date`, `count`) |
 | `change-failure-rate` | `change-failure-rate` | days arg | `total_merged`, `failure_count`, `failure_rate`, `failures[]` (`number`, `reason`, `url`) |
 | `review-load` | `review-load` | null | `total_reviews`, `reviewers[]` (`login`, `reviews`, `share`), `top_share` |
