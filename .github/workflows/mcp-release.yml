@@ -12,7 +12,6 @@ jobs:
       matrix:
         include:
           - { os: macos-latest,   target: bun-darwin-arm64, asset: macos-aarch64 }
-          - { os: macos-13,       target: bun-darwin-x64,   asset: macos-x86_64 }
           - { os: ubuntu-latest,  target: bun-linux-x64,    asset: linux-x86_64 }
           - { os: windows-latest, target: bun-windows-x64,  asset: windows-x86_64 }
     steps:
