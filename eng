@@ -92,6 +92,9 @@ resolve_script() {
     code-churn)            echo "code-churn.sh" ;;
     contributor-patterns)  echo "contributor-file-patterns.sh" ;;
     lottery-factor)        echo "lottery-factor.sh" ;;
+    hotspots)              echo "hotspots.sh" ;;
+    todo-debt)             echo "todo-debt.sh" ;;
+    test-ratio)            echo "test-ratio.sh" ;;
     dependency-changes)    echo "dependency-changes.sh" ;;
     contributions)         echo "track-contributions.sh" ;;
     pull-discussion)       echo "pull-discussion.sh" ;;
@@ -128,6 +131,11 @@ Codebase & Contributors:
   dependency-changes     Dependency update tracking
   contributions          Track a user's review/comment activity
 
+Code Health (local working tree):
+  hotspots               Refactoring targets — churn × code size
+  todo-debt              TODO/FIXME/HACK/XXX markers across the tree
+  test-ratio             Test code vs. source code, by files and LoC
+
 Discussion:
   pull-discussion        Pull full PR discussion as text
   analyze-discussion     Pipe discussion into LLM for summarization
@@ -151,7 +159,7 @@ EOF
 
 generate_completions() {
   local shell="$1"
-  local cmds="lead-time lead-time-user change-failure-rate deploy-frequency review-time pr-size files-per-pr files-per-pr-live stale-prs quick-reviews review-load code-churn contributor-patterns lottery-factor dependency-changes contributions pull-discussion analyze-discussion mcp"
+  local cmds="lead-time lead-time-user change-failure-rate deploy-frequency review-time pr-size files-per-pr files-per-pr-live stale-prs quick-reviews review-load code-churn contributor-patterns lottery-factor dependency-changes contributions hotspots todo-debt test-ratio pull-discussion analyze-discussion mcp"
 
   case "$shell" in
     bash)
@@ -189,6 +197,9 @@ _eng() {
     'lottery-factor:Knowledge concentration risk'
     'dependency-changes:Dependency update tracking'
     'contributions:User review/comment activity'
+    'hotspots:Refactoring targets — churn × code size'
+    'todo-debt:TODO/FIXME/HACK/XXX markers across the tree'
+    'test-ratio:Test code vs source code'
     'pull-discussion:Full PR discussion text'
     'analyze-discussion:LLM discussion summary'
     'mcp:Install the MCP server into your AI agents'
@@ -207,7 +218,7 @@ EOF
     fish)
       cat <<'FISHEOF'
 # Fish completions for eng
-set -l commands lead-time lead-time-user change-failure-rate deploy-frequency review-time pr-size files-per-pr files-per-pr-live stale-prs quick-reviews review-load code-churn contributor-patterns lottery-factor dependency-changes contributions pull-discussion analyze-discussion mcp
+set -l commands lead-time lead-time-user change-failure-rate deploy-frequency review-time pr-size files-per-pr files-per-pr-live stale-prs quick-reviews review-load code-churn contributor-patterns lottery-factor dependency-changes contributions hotspots todo-debt test-ratio pull-discussion analyze-discussion mcp
 
 complete -c eng -f
 complete -c eng -n "not __fish_seen_subcommand_from $commands" -a lead-time -d "Average time from PR creation to merge"
@@ -226,6 +237,9 @@ complete -c eng -n "not __fish_seen_subcommand_from $commands" -a contributor-pa
 complete -c eng -n "not __fish_seen_subcommand_from $commands" -a lottery-factor -d "Knowledge concentration risk"
 complete -c eng -n "not __fish_seen_subcommand_from $commands" -a dependency-changes -d "Dependency update tracking"
 complete -c eng -n "not __fish_seen_subcommand_from $commands" -a contributions -d "User review/comment activity"
+complete -c eng -n "not __fish_seen_subcommand_from $commands" -a hotspots -d "Refactoring targets — churn × code size"
+complete -c eng -n "not __fish_seen_subcommand_from $commands" -a todo-debt -d "TODO/FIXME/HACK/XXX markers across the tree"
+complete -c eng -n "not __fish_seen_subcommand_from $commands" -a test-ratio -d "Test code vs source code"
 complete -c eng -n "not __fish_seen_subcommand_from $commands" -a pull-discussion -d "Full PR discussion text"
 complete -c eng -n "not __fish_seen_subcommand_from $commands" -a analyze-discussion -d "LLM discussion summary"
 complete -c eng -n "not __fish_seen_subcommand_from $commands" -a mcp -d "Install the MCP server into your AI agents"

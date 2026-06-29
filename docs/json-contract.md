@@ -62,6 +62,9 @@ Codes: `AUTH`, `NOT_FOUND`, `RATE_LIMIT`, `BAD_ARGS`, `DEP_MISSING`, `UNKNOWN`.
 | `contributor-patterns` | `contributor-patterns` | null | `contributors[]` (`login`, `pr_count`, `avg_files_per_pr`) |
 | `code-churn` | `code-churn` | days arg | `files[]` (`path`, `change_count`), `hotspot_count` |
 | `dependency-changes` | `dependency-changes` | days arg | `manifest_changes[]` (`file`, `change_count`), `total_dependency_prs` |
+| `hotspots` | `hotspots` | days arg | `files[]` (`path`, `change_count`, `line_count`, `score`), `hotspot_count` |
+| `todo-debt` | `todo-debt` | null | `total`, `by_type` (`TODO`, `FIXME`, `HACK`, `XXX`), `files[]` (`path`, `count`), `file_count` |
+| `test-ratio` | `test-ratio` | null | `source_files`, `test_files`, `source_loc`, `test_loc`, `file_ratio`, `loc_ratio` |
 
 ### Field notes
 
@@ -73,10 +76,25 @@ Codes: `AUTH`, `NOT_FOUND`, `RATE_LIMIT`, `BAD_ARGS`, `DEP_MISSING`, `UNKNOWN`.
   diff stats, so this is a file count, not a line count.
 - `code-churn.files[]` intentionally has **no** `authors` field — the script
   tracks filenames only, not per-file authorship.
+- `hotspots`, `todo-debt`, and `test-ratio` are **local working-tree** metrics:
+  they analyze the checked-out repository, not the GitHub API. `repo` is a
+  best-effort identity derived from the `origin` remote (falling back to the
+  work-tree directory name), and `team` is always `null` (no `--team` support).
+  These run a lighter preflight that requires only `jq` (and `git`) — not `gh`
+  or authentication.
+- `hotspots.files[].score` is `change_count × line_count`, and the array is
+  sorted by `score` descending.
+- `todo-debt` counts are **occurrence-based**: `total` equals the sum of
+  `by_type`, which equals the sum of `files[].count`. A single line with two
+  markers contributes two occurrences.
+- `test-ratio.file_ratio` and `loc_ratio` are `test ÷ source` (files and lines
+  respectively), as floats; they are `0` when no source is found.
 - Empty result sets return a valid envelope with zeroed/empty `data` and exit 0
   (not an error).
 
 ## Requirements
 
 `gh` (authenticated) and `jq`. `--json` mode runs a preflight check and emits a
-`DEP_MISSING` / `AUTH` error envelope if either is unavailable.
+`DEP_MISSING` / `AUTH` error envelope if either is unavailable. The local
+working-tree metrics (`hotspots`, `todo-debt`, `test-ratio`) instead require
+only `git` and `jq` — no `gh`, no authentication.
