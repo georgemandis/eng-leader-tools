@@ -36,12 +36,18 @@ Arguments:
   path   Optional subdirectory to scope to (default: whole repo)
 
 Options:
-  --csv         Output per-directory CSV instead of formatted table
-  --json        Output as a single JSON envelope (machine-readable)
+  --csv          Output per-directory CSV instead of formatted table
+  --json         Output as a single JSON envelope (machine-readable)
+  --healthy R    LoC ratio at/above which test investment is "healthy" (default: 0.5)
+  --low R        LoC ratio below which test investment is "low" (default: 0.2)
+
+The thresholds affect only the human-readable assessment; --json / --csv
+output is unchanged by them.
 
 Examples:
   $(basename "$0")
   $(basename "$0") src/
+  $(basename "$0") --healthy 0.4 --low 0.15
   $(basename "$0") --json
 
 Requires: git (jq for --json)
@@ -50,25 +56,36 @@ EOF
 
 CSV=false
 JSON=false
-for arg in "$@"; do
-  case "$arg" in
+HEALTHY=0.5
+LOW=0.2
+pos=()
+while [[ $# -gt 0 ]]; do
+  case "$1" in
     -h|--help) usage; exit 0 ;;
-    --csv) CSV=true ;;
+    --csv)  CSV=true ;;
     --json) JSON=true ;;
+    --healthy)   shift; HEALTHY="${1:-}" ;;
+    --healthy=*) HEALTHY="${1#*=}" ;;
+    --low)       shift; LOW="${1:-}" ;;
+    --low=*)     LOW="${1#*=}" ;;
+    *) pos+=("$1") ;;
   esac
+  shift
 done
-
-args=()
-for arg in "$@"; do
-  [[ "$arg" != "--csv" && "$arg" != "--json" ]] && args+=("$arg")
-done
-set -- "${args[@]+"${args[@]}"}"
+set -- "${pos[@]+"${pos[@]}"}"
 
 source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 
 require_git_repo || { usage >&2; exit 1; }
 [[ "$JSON" == "true" ]] && json_preflight_local
 resolve_local_repo
+
+# Validate thresholds (non-negative numbers, integer or decimal).
+if ! [[ "$HEALTHY" =~ ^[0-9]+(\.[0-9]+)?$ && "$LOW" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+  [[ "$JSON" == "true" ]] && json_error BAD_ARGS "--healthy and --low must be non-negative numbers"
+  echo "Error: --healthy and --low must be non-negative numbers" >&2
+  exit 1
+fi
 
 SCOPE="${1:-}"
 
@@ -178,12 +195,13 @@ done <<< "$all_dirs"
 echo
 printf "Assessment:\n"
 printf "───────────\n"
-# Compare on LoC ratio — a rough rule of thumb, not a hard target.
-verdict=$(awk -v r="$loc_ratio" 'BEGIN {
-  if (r >= 0.5)      print "🟢 Healthy test investment (≥0.5 test:source LoC).";
-  else if (r >= 0.2) print "🟡 Moderate test coverage — some areas likely thin.";
-  else if (r > 0)    print "🔴 Low test investment (<0.2 test:source LoC).";
-  else               print "🔴 No test code detected by convention.";
+# Compare on LoC ratio — a rough rule of thumb, not a hard target. Thresholds
+# are configurable via --healthy / --low.
+verdict=$(awk -v r="$loc_ratio" -v hi="$HEALTHY" -v lo="$LOW" 'BEGIN {
+  if (r >= hi)      print "🟢 Healthy test investment (≥" hi " test:source LoC).";
+  else if (r >= lo) print "🟡 Moderate test coverage — some areas likely thin.";
+  else if (r > 0)   print "🔴 Low test investment (<" lo " test:source LoC).";
+  else              print "🔴 No test code detected by convention.";
 }')
 echo "  $verdict"
 echo "  Note: a structural proxy by convention — not a substitute for running coverage."

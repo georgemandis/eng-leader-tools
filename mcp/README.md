@@ -8,7 +8,7 @@ Exposes `eng` metric commands as MCP tools so AI agents can query engineering-le
 
 - [`eng`](../README.md) installed and on your PATH (the server shells out to it)
 - [Bun](https://bun.sh)
-- An authenticated `gh` (the metrics hit the GitHub API)
+- An authenticated `gh` (the GitHub-API metrics need it; the local code-health tools — `eng_hotspots`, `eng_todo_debt`, `eng_test_ratio` — do not)
 
 ## Install
 
@@ -40,4 +40,9 @@ claude mcp add engleader -s user -- bun run /path/to/engleader-tools-scripts/mcp
 
 ## Tools
 
-13 tools, one per metric: `eng_lead_time`, `eng_change_failure_rate`, `eng_deploy_frequency`, `eng_review_time`, `eng_pr_size`, `eng_files_per_pr`, `eng_stale_prs`, `eng_review_load`, `eng_code_churn`, `eng_contributor_patterns`, `eng_lottery_factor`, `eng_dependency_changes`, `eng_pull_discussion`. Each accepts `repo` (owner/repo); metric tools return the JSON envelope, `eng_pull_discussion` returns structured text.
+16 tools, one per metric.
+
+**GitHub API tools** — each accepts `repo` (owner/repo); metric tools return the JSON envelope, `eng_pull_discussion` returns structured text:
+`eng_lead_time`, `eng_change_failure_rate`, `eng_deploy_frequency`, `eng_review_time`, `eng_pr_size`, `eng_files_per_pr`, `eng_stale_prs`, `eng_review_load`, `eng_code_churn`, `eng_contributor_patterns`, `eng_lottery_factor`, `eng_dependency_changes`, `eng_pull_discussion`.
+
+**Code-health tools** (local working tree) — `eng_hotspots`, `eng_todo_debt`, `eng_test_ratio`. These analyze a checked-out repository instead of the GitHub API, so they take a `directory` (the local repo path, run as the command's working directory) instead of `repo`, and need no `gh` or auth. `eng_todo_debt` and `eng_test_ratio` also accept an optional `path` to scope to a subdirectory.

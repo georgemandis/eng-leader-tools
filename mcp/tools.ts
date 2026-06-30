@@ -4,6 +4,9 @@ import { z } from "zod";
 // appears in the eng command line after `repo`.
 type NumParam = { key: string; describe: string };
 
+// A string positional param (e.g. an optional scope path for local-tree tools).
+type StrParam = { key: string; describe: string };
+
 export type ToolDef = {
   name: string;          // MCP tool name (eng_*)
   command: string;       // eng subcommand
@@ -12,6 +15,12 @@ export type ToolDef = {
   raw?: boolean;         // return stdout text instead of parsed JSON
   numParams: NumParam[]; // ordered numeric positionals after repo
   prNumber?: boolean;    // requires a pr_number positional (pull-discussion)
+  // Local-tree tools (hotspots, todo-debt, test-ratio) analyze the checked-out
+  // repository instead of the GitHub API. They take a `directory` (the repo to
+  // run in, passed as the child process cwd) instead of a `repo` argument, and
+  // ignore team filtering.
+  local?: boolean;
+  pathParam?: StrParam;  // optional trailing string positional (scope path)
 };
 
 const WINDOW = (def: number): NumParam => ({
@@ -65,16 +74,38 @@ export const TOOLS: ToolDef[] = [
   { name: "eng_pull_discussion", command: "pull-discussion", teamAware: false, raw: true,
     description: "Full PR discussion (comments, reviews, files) as structured text.",
     numParams: [], prNumber: true },
+  // Code health (local working tree — pass `directory`, not `repo`)
+  { name: "eng_hotspots", command: "hotspots", teamAware: false, local: true,
+    description:
+      "Refactoring targets in a local repo — files high in both change " +
+      "frequency (churn) and code size. Analyzes the working tree, not the API.",
+    numParams: [WINDOW(90), { key: "min_changes", describe: "Minimum commits touching a file (default: 3)" }] },
+  { name: "eng_todo_debt", command: "todo-debt", teamAware: false, local: true,
+    description:
+      "Counts and locates TODO/FIXME/HACK/XXX debt markers across a local " +
+      "repo's tracked files.",
+    numParams: [], pathParam: { key: "path", describe: "Optional subdirectory to scope the scan to" } },
+  { name: "eng_test_ratio", command: "test-ratio", teamAware: false, local: true,
+    description:
+      "Ratio of test code to source code in a local repo, by file count and " +
+      "lines of code, with a per-directory breakdown.",
+    numParams: [], pathParam: { key: "path", describe: "Optional subdirectory to scope to" } },
 ];
 
 // Turn validated params into the ordered positional argument array for eng.
 // Positionals are order-sensitive: once one is omitted, no later positional
 // may be supplied (eng would mis-read it as the earlier slot).
 export function buildArgs(tool: ToolDef, params: Record<string, unknown>): string[] {
-  if (params.repo === undefined || params.repo === null) {
-    throw new Error("buildArgs: 'repo' is required");
+  const args: string[] = [];
+  if (tool.local) {
+    // Local-tree tools take no `repo`; the `directory` param is applied as the
+    // child process cwd by the caller, not as a positional argument.
+  } else {
+    if (params.repo === undefined || params.repo === null) {
+      throw new Error("buildArgs: 'repo' is required");
+    }
+    args.push(String(params.repo));
   }
-  const args: string[] = [String(params.repo)];
   if (tool.prNumber) args.push(String(params.pr_number));
 
   let sawGap = false;
@@ -90,17 +121,34 @@ export function buildArgs(tool: ToolDef, params: Record<string, unknown>): strin
     if (present) args.push(String(v));
     else sawGap = true;
   }
+
+  if (tool.pathParam) {
+    const v = params[tool.pathParam.key];
+    if (v !== undefined && v !== null) args.push(String(v));
+  }
   return args;
 }
 
 // Build the zod schema object for a tool's MCP params.
 export function schemaFor(tool: ToolDef): Record<string, z.ZodTypeAny> {
-  const shape: Record<string, z.ZodTypeAny> = {
-    repo: z.string().describe("Repository as owner/repo"),
-  };
+  const shape: Record<string, z.ZodTypeAny> = {};
+  if (tool.local) {
+    shape.directory = z
+      .string()
+      .optional()
+      .describe(
+        "Path to the local git repository to analyze " +
+          "(defaults to the server's working directory)",
+      );
+  } else {
+    shape.repo = z.string().describe("Repository as owner/repo");
+  }
   if (tool.prNumber) shape.pr_number = z.number().describe("Pull request number");
   for (const p of tool.numParams) {
     shape[p.key] = z.number().optional().describe(p.describe);
+  }
+  if (tool.pathParam) {
+    shape[tool.pathParam.key] = z.string().optional().describe(tool.pathParam.describe);
   }
   if (tool.teamAware) {
     shape.team = z.string().optional().describe("Filter to members of this GitHub Team slug");

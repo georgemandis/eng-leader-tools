@@ -35,12 +35,18 @@ Arguments:
   min_changes   Minimum commits touching a file to consider it (default: 3)
 
 Options:
-  --csv         Output as CSV instead of formatted table
-  --json        Output as a single JSON envelope (machine-readable)
+  --csv             Output as CSV instead of formatted table
+  --json            Output as a single JSON envelope (machine-readable)
+  --high-lines N    Line count for the high-risk tier (default: 200)
+  --med-lines N     Line count for the medium-risk tier (default: 50)
+
+The tier cutoffs affect only the human-readable risk assessment; --json /
+--csv output is unchanged by them.
 
 Examples:
   $(basename "$0")
   $(basename "$0") 180 5
+  $(basename "$0") 90 --high-lines 300 --med-lines 80
   $(basename "$0") 90 --json
 
 Requires: git (jq for --json)
@@ -49,26 +55,36 @@ EOF
 
 CSV=false
 JSON=false
-for arg in "$@"; do
-  case "$arg" in
+HIGH_LINES=200
+MED_LINES=50
+pos=()
+while [[ $# -gt 0 ]]; do
+  case "$1" in
     -h|--help) usage; exit 0 ;;
-    --csv) CSV=true ;;
+    --csv)  CSV=true ;;
     --json) JSON=true ;;
+    --high-lines)   shift; HIGH_LINES="${1:-}" ;;
+    --high-lines=*) HIGH_LINES="${1#*=}" ;;
+    --med-lines)    shift; MED_LINES="${1:-}" ;;
+    --med-lines=*)  MED_LINES="${1#*=}" ;;
+    *) pos+=("$1") ;;
   esac
+  shift
 done
-
-# Strip flags from positional args
-args=()
-for arg in "$@"; do
-  [[ "$arg" != "--csv" && "$arg" != "--json" ]] && args+=("$arg")
-done
-set -- "${args[@]+"${args[@]}"}"
+set -- "${pos[@]+"${pos[@]}"}"
 
 source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 
 require_git_repo || { usage >&2; exit 1; }
 [[ "$JSON" == "true" ]] && json_preflight_local
 resolve_local_repo
+
+# Validate tier cutoffs (non-negative integers).
+if ! [[ "$HIGH_LINES" =~ ^[0-9]+$ && "$MED_LINES" =~ ^[0-9]+$ ]]; then
+  [[ "$JSON" == "true" ]] && json_error BAD_ARGS "--high-lines and --med-lines must be non-negative integers"
+  echo "Error: --high-lines and --med-lines must be non-negative integers" >&2
+  exit 1
+fi
 
 DAYS="${1:-90}"
 MIN_CHANGES="${2:-3}"
@@ -157,9 +173,10 @@ if (( total > 20 )); then
   printf "  … and %d more\n" "$(( total - 20 ))"
 fi
 
-# Risk tiers: a hotspot is risky when it is BOTH churned and large.
-high=$(printf '%s\n' "$records" | awk -F'\t' '$3 >= 200')
-med=$(printf '%s\n'  "$records" | awk -F'\t' '$3 >= 50 && $3 < 200')
+# Risk tiers: a hotspot is risky when it is BOTH churned and large. The line
+# cutoffs are configurable via --high-lines / --med-lines.
+high=$(printf '%s\n' "$records" | awk -F'\t' -v h="$HIGH_LINES" '$3 >= h')
+med=$(printf '%s\n'  "$records" | awk -F'\t' -v h="$HIGH_LINES" -v m="$MED_LINES" '$3 >= m && $3 < h')
 high_n=$(printf '%s' "$high" | grep -c . || true)
 med_n=$(printf '%s'  "$med"  | grep -c . || true)
 
@@ -167,11 +184,11 @@ echo
 printf "Risk Assessment:\n"
 printf "────────────────\n"
 if (( high_n > 0 )); then
-  echo "• 🔴 High: $high_n hotspot(s) ≥200 lines — large, frequently-changed files."
+  echo "• 🔴 High: $high_n hotspot(s) ≥${HIGH_LINES} lines — large, frequently-changed files."
   echo "  Prime candidates to split up and shore up with tests."
 fi
 if (( med_n > 0 )); then
-  echo "• 🟡 Medium: $med_n hotspot(s) 50–199 lines — watch for growth."
+  echo "• 🟡 Medium: $med_n hotspot(s) ${MED_LINES}–$(( HIGH_LINES - 1 )) lines — watch for growth."
 fi
 if (( high_n == 0 && med_n == 0 )); then
   echo "• 🟢 Churn is concentrated in small files — low refactoring pressure."

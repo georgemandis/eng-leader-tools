@@ -151,9 +151,12 @@ want to analyze (`jq` is only needed for `--json`).
 
 | Command | Description |
 |---------|-------------|
-| `eng hotspots` | Refactoring targets — joins change frequency (churn, from local `git log`) with code size (a complexity proxy). Files that are both frequently changed *and* large score highest. |
+| `eng hotspots` | Refactoring targets — joins change frequency (churn, from local `git log`) with code size (a complexity proxy). Files that are both frequently changed *and* large score highest. Risk tiers tunable via `--high-lines` / `--med-lines`. |
 | `eng todo-debt` | Counts and locates `TODO`/`FIXME`/`HACK`/`XXX` markers across tracked files, grouped by type, file, and directory |
-| `eng test-ratio` | Ratio of test code to source code, by file count and lines of code, with a per-directory breakdown |
+| `eng test-ratio` | Ratio of test code to source code, by file count and lines of code, with a per-directory breakdown. Assessment thresholds tunable via `--healthy` / `--low`. |
+
+The risk/assessment thresholds shape only the human-readable output; `--json`
+and `--csv` results are unaffected by them.
 
 ### Discussion Tools
 

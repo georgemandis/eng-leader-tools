@@ -20,9 +20,17 @@ test("resolveEngBin throws an actionable error when eng is missing", () => {
 
 // A fake spawn that records the call and returns canned output.
 function fakeSpawn(result: { stdout: string; stderr: string; exitCode: number }) {
-  const calls: { argv: string[]; env: Record<string, string | undefined> }[] = [];
-  const spawn = (argv: string[], env: Record<string, string | undefined>) => {
-    calls.push({ argv, env });
+  const calls: {
+    argv: string[];
+    env: Record<string, string | undefined>;
+    cwd?: string;
+  }[] = [];
+  const spawn = (
+    argv: string[],
+    env: Record<string, string | undefined>,
+    cwd?: string,
+  ) => {
+    calls.push({ argv, env, cwd });
     return Promise.resolve(result);
   };
   return { spawn, calls };
@@ -37,6 +45,20 @@ test("runEng builds argv: eng <command> <...positional> --json", async () => {
   });
   await runEng("lead-time", ["acme/widget", "30"], {}, env, spawn);
   expect(calls[0]!.argv).toEqual(["/bin/eng", "lead-time", "acme/widget", "30", "--json"]);
+});
+
+test("runEng passes opts.cwd through to spawn (local-tree tools)", async () => {
+  const env = { ENG_BIN: "/bin/eng" };
+  const { spawn, calls } = fakeSpawn({ stdout: "{}", stderr: "", exitCode: 0 });
+  await runEng("hotspots", ["90"], { cwd: "/home/me/project" }, env, spawn);
+  expect(calls[0]!.cwd).toBe("/home/me/project");
+});
+
+test("runEng leaves cwd undefined when not provided", async () => {
+  const env = { ENG_BIN: "/bin/eng" };
+  const { spawn, calls } = fakeSpawn({ stdout: "{}", stderr: "", exitCode: 0 });
+  await runEng("lead-time", ["acme/widget"], {}, env, spawn);
+  expect(calls[0]!.cwd).toBeUndefined();
 });
 
 test("runEng passes team as ENG_TEAM in the child env", async () => {

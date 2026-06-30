@@ -84,6 +84,9 @@ Codes: `AUTH`, `NOT_FOUND`, `RATE_LIMIT`, `BAD_ARGS`, `DEP_MISSING`, `UNKNOWN`.
   or authentication.
 - `hotspots.files[].score` is `change_count × line_count`, and the array is
   sorted by `score` descending.
+- The risk/assessment threshold flags (`hotspots --high-lines`/`--med-lines`,
+  `test-ratio --healthy`/`--low`) shape only the human-readable table — they do
+  **not** change the `--json` envelope, so JSON consumers can ignore them.
 - `todo-debt` counts are **occurrence-based**: `total` equals the sum of
   `by_type`, which equals the sum of `files[].count`. A single line with two
   markers contributes two occurrences.
