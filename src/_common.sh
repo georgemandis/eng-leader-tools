@@ -127,11 +127,15 @@ json_preflight() {
 
 # require_git_repo
 #   Sets ROOT to the repository top level, or errors and returns non-zero.
+#   In JSON mode (JSON=true in caller scope) it instead emits a NOT_FOUND
+#   error envelope on stdout and exits, so the MCP runner gets parseable JSON
+#   rather than empty stdout + a plain-text stderr message.
 require_git_repo() {
-    ROOT=$(git rev-parse --show-toplevel 2>/dev/null) || {
-        echo "Error: not inside a git repository (this metric analyzes the local working tree)" >&2
-        return 1
-    }
+    ROOT=$(git rev-parse --show-toplevel 2>/dev/null) && return 0
+    [[ "${JSON:-false}" == "true" ]] && \
+        json_error NOT_FOUND "not inside a git repository (this metric analyzes the local working tree)"
+    echo "Error: not inside a git repository (this metric analyzes the local working tree)" >&2
+    return 1
 }
 
 # resolve_local_repo

@@ -75,8 +75,8 @@ set -- "${pos[@]+"${pos[@]}"}"
 
 source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 
-require_git_repo || { usage >&2; exit 1; }
 [[ "$JSON" == "true" ]] && json_preflight_local
+require_git_repo || { usage >&2; exit 1; }
 resolve_local_repo
 
 # Validate tier cutoffs (non-negative integers).
