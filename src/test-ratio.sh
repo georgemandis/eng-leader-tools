@@ -59,14 +59,19 @@ JSON=false
 HEALTHY=0.5
 LOW=0.2
 pos=()
+# need_value <flag>: fail clearly when a value-taking flag has no argument,
+# instead of shifting past the end and silently aborting under `set -e`.
+need_value() {
+  [[ $# -ge 2 ]] || { echo "Error: $1 requires a value" >&2; exit 1; }
+}
 while [[ $# -gt 0 ]]; do
   case "$1" in
     -h|--help) usage; exit 0 ;;
     --csv)  CSV=true ;;
     --json) JSON=true ;;
-    --healthy)   shift; HEALTHY="${1:-}" ;;
+    --healthy)   need_value "$@"; HEALTHY="$2"; shift ;;
     --healthy=*) HEALTHY="${1#*=}" ;;
-    --low)       shift; LOW="${1:-}" ;;
+    --low)       need_value "$@"; LOW="$2"; shift ;;
     --low=*)     LOW="${1#*=}" ;;
     *) pos+=("$1") ;;
   esac

@@ -58,14 +58,19 @@ JSON=false
 HIGH_LINES=200
 MED_LINES=50
 pos=()
+# need_value <flag>: fail clearly when a value-taking flag has no argument,
+# instead of shifting past the end and silently aborting under `set -e`.
+need_value() {
+  [[ $# -ge 2 ]] || { echo "Error: $1 requires a value" >&2; exit 1; }
+}
 while [[ $# -gt 0 ]]; do
   case "$1" in
     -h|--help) usage; exit 0 ;;
     --csv)  CSV=true ;;
     --json) JSON=true ;;
-    --high-lines)   shift; HIGH_LINES="${1:-}" ;;
+    --high-lines)   need_value "$@"; HIGH_LINES="$2"; shift ;;
     --high-lines=*) HIGH_LINES="${1#*=}" ;;
-    --med-lines)    shift; MED_LINES="${1:-}" ;;
+    --med-lines)    need_value "$@"; MED_LINES="$2"; shift ;;
     --med-lines=*)  MED_LINES="${1#*=}" ;;
     *) pos+=("$1") ;;
   esac
@@ -89,16 +94,28 @@ fi
 DAYS="${1:-90}"
 MIN_CHANGES="${2:-3}"
 
+# Validate positionals (non-negative integers). Guards emit_json's --argjson
+# window later, which would otherwise surface a raw jq error.
+if ! [[ "$DAYS" =~ ^[0-9]+$ && "$MIN_CHANGES" =~ ^[0-9]+$ ]]; then
+  [[ "$JSON" == "true" ]] && json_error BAD_ARGS "days and min_changes must be non-negative integers"
+  echo "Error: days and min_changes must be non-negative integers" >&2
+  exit 1
+fi
+
 [[ "$CSV" == "false" && "$JSON" == "false" ]] && \
   echo "Analyzing hotspots for $REPO (last $DAYS days, min $MIN_CHANGES changes) …"
 
 # Churn: count commits touching each path within the window. Blank lines from
-# the empty --pretty format are dropped before counting.
-# `|| true` keeps an empty window (grep finds no lines under pipefail) from
+# the empty --pretty format are dropped before counting. Counting happens in a
+# single awk pass keyed on the whole line, so paths that contain consecutive
+# spaces (or other internal whitespace) survive verbatim — `uniq -c` + field
+# surgery would collapse them and break the ls-files join below.
+# `|| true` keeps an empty window (no matching lines under pipefail) from
 # tripping `set -e` before the empty-result handler runs.
 churn=$(git -C "$ROOT" log --since="${DAYS} days ago" --pretty=format: --name-only 2>/dev/null \
-  | grep -v '^$' | sort | uniq -c \
-  | awk -v min="$MIN_CHANGES" '$1 >= min { c=$1; $1=""; sub(/^ /,""); print c "\t" $0 }' || true)
+  | awk -v min="$MIN_CHANGES" '
+      $0 != "" { count[$0]++ }
+      END { for (p in count) if (count[p] >= min) print count[p] "\t" p }' || true)
 
 emit_empty() {
   if [[ "$JSON" == "true" ]]; then

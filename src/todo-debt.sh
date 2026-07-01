@@ -106,9 +106,12 @@ hack_n=$(count_marker "HACK")
 xxx_n=$(count_marker "XXX")
 total=$(printf '%s\n' "$matches" | grep -c . || true)
 
-# Per-file occurrence counts, most debt first (sums to total).
-per_file=$(printf '%s\n' "$matches" | cut -d: -f1 | sort | uniq -c | sort -nr \
-  | awk '{ c=$1; $1=""; sub(/^ /,""); print c "\t" $0 }')
+# Per-file occurrence counts, most debt first (sums to total). Count in a
+# single awk pass keyed on the whole path so filenames with consecutive spaces
+# survive verbatim; `sort` then orders by the leading numeric count descending.
+per_file=$(printf '%s\n' "$matches" | cut -d: -f1 \
+  | awk '{ count[$0]++ } END { for (p in count) print count[p] "\t" p }' \
+  | sort -t$'\t' -k1,1nr)
 
 if [[ "$JSON" == "true" ]]; then
   files_json=$(printf '%s\n' "$per_file" | jq -R -s '
