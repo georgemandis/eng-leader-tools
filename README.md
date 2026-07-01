@@ -142,6 +142,22 @@ This shows the resolved `ENG_REPO`, `ENG_OWNER`, `ENG_TEAM`, and `ENG_TEAM_MEMBE
 | `eng dependency-changes` | Tracks dependency update PRs, flags security updates, measures automation |
 | `eng contributions` | Tracks a user's review and comment activity across an org |
 
+### Code Health (local working tree)
+
+Unlike every other command, these analyze the **checked-out repository** rather
+than the GitHub API — so they need no network and no `gh`, but they ignore the
+`owner/repo` argument and `--team` filtering. Run them from inside the repo you
+want to analyze (`jq` is only needed for `--json`).
+
+| Command | Description |
+|---------|-------------|
+| `eng hotspots` | Refactoring targets — joins change frequency (churn, from local `git log`) with code size (a complexity proxy). Files that are both frequently changed *and* large score highest. Risk tiers tunable via `--high-lines` / `--med-lines`. |
+| `eng todo-debt` | Counts and locates `TODO`/`FIXME`/`HACK`/`XXX` markers across tracked files, grouped by type, file, and directory |
+| `eng test-ratio` | Ratio of test code to source code, by file count and lines of code, with a per-directory breakdown. Assessment thresholds tunable via `--healthy` / `--low`. |
+
+The risk/assessment thresholds shape only the human-readable output; `--json`
+and `--csv` results are unaffected by them.
+
 ### Discussion Tools
 
 | Command | Description |
@@ -181,6 +197,15 @@ eng deploy-frequency my-org/my-repo 90
 
 # What's our rollback/hotfix rate?
 eng change-failure-rate my-org/my-repo 30
+
+# Which files are the best refactoring targets? (run inside the repo)
+eng hotspots 90 5
+
+# How much self-flagged tech debt is lying around?
+eng todo-debt
+
+# How much test code do we have relative to source?
+eng test-ratio
 
 # What has someone been reviewing lately?
 eng contributions janedoe my-org 30 --verbose

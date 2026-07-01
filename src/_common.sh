@@ -119,6 +119,51 @@ json_preflight() {
     gh auth status >/dev/null 2>&1 || json_error AUTH "gh is not authenticated"
 }
 
+# ── Local working-tree helpers ───────────────────────────────────────
+# These power the content/code-health metrics that analyze the checked-out
+# repository directly (hotspots, todo-debt, test-ratio) rather than the
+# GitHub API. Unlike the API-based metrics, they require being inside a git
+# work tree and ignore the owner/repo argument / ENG_TEAM filtering.
+
+# require_git_repo
+#   Sets ROOT to the repository top level, or errors and returns non-zero.
+#   In JSON mode (JSON=true in caller scope) it instead emits a NOT_FOUND
+#   error envelope on stdout and exits, so the MCP runner gets parseable JSON
+#   rather than empty stdout + a plain-text stderr message.
+require_git_repo() {
+    ROOT=$(git rev-parse --show-toplevel 2>/dev/null) && return 0
+    [[ "${JSON:-false}" == "true" ]] && \
+        json_error NOT_FOUND "not inside a git repository (this metric analyzes the local working tree)"
+    echo "Error: not inside a git repository (this metric analyzes the local working tree)" >&2
+    return 1
+}
+
+# resolve_local_repo
+#   Sets REPO to a best-effort "owner/repo" identity for the JSON envelope,
+#   derived from the origin remote, falling back to the work-tree directory
+#   name. Deliberately does NOT trust ENG_REPO, which the `eng` wrapper may
+#   have populated from a path argument (e.g. `eng todo-debt src/`).
+resolve_local_repo() {
+    local url
+    url=$(git remote get-url origin 2>/dev/null || true)
+    url="${url%.git}"
+    if [[ "$url" =~ github\.com[:/]([A-Za-z0-9._-]+/[A-Za-z0-9._-]+)$ ]]; then
+        REPO="${BASH_REMATCH[1]}"
+    elif [[ -n "${ROOT:-}" ]]; then
+        REPO="$(basename "$ROOT")"
+    else
+        REPO=""
+    fi
+}
+
+# json_preflight_local
+#   JSON-mode dependency check for local-tree metrics. Only jq and git are
+#   required — no gh, no auth. Call ONLY when JSON=true.
+json_preflight_local() {
+    command -v jq  >/dev/null 2>&1 || json_error DEP_MISSING "jq is not installed"
+    command -v git >/dev/null 2>&1 || json_error DEP_MISSING "git is not installed"
+}
+
 # ── Parallel per-PR fetch helper ─────────────────────────────────────
 # The metrics that fetch per-PR detail (lottery-factor, contributor-patterns,
 # review-time, …) make one `gh api` call per PR. Run them concurrently with

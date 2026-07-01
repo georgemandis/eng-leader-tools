@@ -1,8 +1,8 @@
 import { test, expect } from "bun:test";
-import { TOOLS, buildArgs } from "./tools.ts";
+import { TOOLS, buildArgs, schemaFor } from "./tools.ts";
 
-test("there are 13 tools", () => {
-  expect(TOOLS.length).toBe(13);
+test("there are 16 tools", () => {
+  expect(TOOLS.length).toBe(16);
 });
 
 test("every tool name is eng_ prefixed and unique", () => {
@@ -64,4 +64,29 @@ test("buildArgs throws when a later positional is set but an earlier one is omit
 test("buildArgs throws when repo is missing", () => {
   const tool = TOOLS.find((t) => t.name === "eng_lead_time")!;
   expect(() => buildArgs(tool, {})).toThrow(/repo/);
+});
+
+test("local tools omit repo and never require it (directory is cwd, not an arg)", () => {
+  const tool = TOOLS.find((t) => t.name === "eng_hotspots")!;
+  expect(tool.local).toBe(true);
+  // directory is NOT a positional — it becomes the child cwd in index.ts.
+  expect(buildArgs(tool, { directory: "/some/repo" })).toEqual([]);
+  expect(buildArgs(tool, { directory: "/some/repo", window_days: 90, min_changes: 5 })).toEqual([
+    "90",
+    "5",
+  ]);
+});
+
+test("local tools accept an optional path scope as a trailing positional", () => {
+  const tool = TOOLS.find((t) => t.name === "eng_todo_debt")!;
+  expect(tool.local).toBe(true);
+  expect(buildArgs(tool, {})).toEqual([]);
+  expect(buildArgs(tool, { path: "src/" })).toEqual(["src/"]);
+});
+
+test("schemaFor exposes directory (not repo) for local tools", () => {
+  const tool = TOOLS.find((t) => t.name === "eng_test_ratio")!;
+  const shape = schemaFor(tool);
+  expect(shape.directory).toBeDefined();
+  expect(shape.repo).toBeUndefined();
 });

@@ -11,7 +11,7 @@ for (const tool of TOOLS) {
       const result = await runEng(
         tool.command,
         buildArgs(tool, params),
-        { team: params.team, raw: tool.raw },
+        { team: params.team, raw: tool.raw, cwd: tool.local ? params.directory : undefined },
       );
       const text = typeof result === "string" ? result : JSON.stringify(result, null, 2);
       return { content: [{ type: "text" as const, text }] };

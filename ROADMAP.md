@@ -2,6 +2,13 @@
 
 ## Shipped
 
+### Code Health Metrics
+Local working-tree metrics that analyze the checked-out repository instead of
+the GitHub API: `hotspots` (churn × code size), `todo-debt` (TODO/FIXME/HACK/XXX
+markers), and `test-ratio` (test vs. source by files and LoC). These need no
+`gh` and no network. `hotspots` realizes the churn × complexity model that the
+API-based `code-churn` only had one axis of.
+
 ### Team Filtering (v0.2.0)
 Filter metrics to GitHub Team members via `--team` flag. See README for usage.
 

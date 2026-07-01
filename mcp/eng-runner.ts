@@ -21,14 +21,15 @@ export function resolveEngBin(
 }
 
 type SpawnResult = { stdout: string; stderr: string; exitCode: number };
-type SpawnFn = (argv: string[], env: Env) => Promise<SpawnResult>;
+type SpawnFn = (argv: string[], env: Env, cwd?: string) => Promise<SpawnResult>;
 
-export type RunOpts = { team?: string; raw?: boolean };
+export type RunOpts = { team?: string; raw?: boolean; cwd?: string };
 
 // Default spawn implementation using Bun.spawn.
-const defaultSpawn: SpawnFn = async (argv, env) => {
+const defaultSpawn: SpawnFn = async (argv, env, cwd) => {
   const proc = Bun.spawn(argv, {
     env: env as Record<string, string>,
+    cwd, // undefined → inherit the server's working directory
     stdout: "pipe",
     stderr: "pipe",
   });
@@ -61,7 +62,7 @@ export async function runEng(
   const childEnv: Env = { ...env };
   if (opts.team) childEnv.ENG_TEAM = opts.team;
 
-  const { stdout, stderr, exitCode } = await spawn(argv, childEnv);
+  const { stdout, stderr, exitCode } = await spawn(argv, childEnv, opts.cwd);
 
   if (opts.raw && exitCode === 0) return stdout;
 
