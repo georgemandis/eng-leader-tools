@@ -121,7 +121,7 @@ PR Health:
   files-per-pr           Files changed per merged PR
   files-per-pr-live      Files changed per open PR
   stale-prs              Open PRs grouped by age
-  quick-reviews          Small open PRs that need review
+  quick-reviews          Small open PRs that need review (-A: approved but unmerged)
   review-load            Review work distribution across team members
 
 Codebase & Contributors:

@@ -129,7 +129,7 @@ This shows the resolved `ENG_REPO`, `ENG_OWNER`, `ENG_TEAM`, and `ENG_TEAM_MEMBE
 | `eng files-per-pr` | Files changed per merged PR |
 | `eng files-per-pr-live` | Files changed per *open* PR, flags large ones needing review attention |
 | `eng stale-prs` | Open PRs grouped by age, highlights work that may need attention |
-| `eng quick-reviews` | Surfaces small open PRs (1-2 files) that haven't been approved yet |
+| `eng quick-reviews` | Surfaces small open PRs (1-2 files) that haven't been approved yet; `-A` flips it to approved-but-unmerged PRs of any size |
 | `eng review-load` | How review work is distributed across team members |
 
 ### Codebase & Contributor Analysis
@@ -212,6 +212,9 @@ eng contributions janedoe my-org 30 --verbose
 
 # Any small PRs that need a quick review?
 eng quick-reviews -o my-org -r my-repo
+
+# What's approved but still sitting unmerged?
+eng quick-reviews -o my-org -r my-repo -A
 
 # Summarize a PR discussion with an LLM
 eng pull-discussion my-org/my-repo 42 | eng analyze-discussion
